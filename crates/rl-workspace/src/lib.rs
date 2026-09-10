@@ -60,6 +60,7 @@
 pub mod collection;
 pub mod environment;
 pub mod error;
+pub mod history;
 pub mod layout;
 pub mod secrets;
 pub mod workspace;
@@ -67,6 +68,7 @@ pub mod workspace;
 pub use collection::Collection;
 pub use environment::Environment;
 pub use error::{Result, WorkspaceError};
+pub use history::{History, HistoryEntry, NewEntry, RedactedEntry};
 pub use layout::Layout;
 pub use secrets::{FileSecretStore, SecretStore};
 pub use workspace::{ProjectRef, Workspace, WorkspaceKind, WorkspaceManifest};

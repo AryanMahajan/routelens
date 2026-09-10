@@ -48,6 +48,12 @@ pub enum WorkspaceError {
         source: yaml_serde::Error,
     },
 
+    #[error("history database error")]
+    Database {
+        #[source]
+        source: rusqlite::Error,
+    },
+
     #[error("could not read the secret store")]
     Secrets {
         #[source]

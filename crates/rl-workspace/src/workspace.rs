@@ -245,6 +245,13 @@ impl Workspace {
         FileSecretStore::new(self.layout.secrets_file())
     }
 
+    // --- history ------------------------------------------------------------------------
+
+    /// Open this workspace's request history, creating the database if needed.
+    pub fn history(&self) -> Result<crate::history::History> {
+        crate::history::History::open(self.layout.history_db())
+    }
+
     // --- putting it together ------------------------------------------------------------
 
     /// Assemble the variables a request will resolve against.

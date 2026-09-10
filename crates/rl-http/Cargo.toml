@@ -12,3 +12,16 @@ rl-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "gzip",
+    "brotli",
+    "deflate",
+    "multipart",
+] }
+tokio = { version = "1", features = ["time"] }
+base64 = "0.22"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }

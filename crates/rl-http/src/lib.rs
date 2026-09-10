@@ -5,23 +5,54 @@
 //! An API client's job is to send *exactly* what the user described, including the things a
 //! normal HTTP client would helpfully correct. Convenience is the wrong default here:
 //!
-//! - Redirects are **not** followed unless asked; when they are, the chain is shown.
-//!   Beyond showing what the server actually returned, this avoids silently forwarding an
-//!   `Authorization` header to a host the user did not intend to contact.
-//! - Raw response bytes are preserved alongside the decoded body — no silent decompression.
-//! - Header order is preserved, and duplicate or unusual headers pass through.
-//! - Certificate verification is toggleable **per request**, never globally, so relaxing it
-//!   for one call against localhost cannot weaken a later call to production.
-//! - Response bodies stream: the in-UI preview is capped, large payloads go to a file.
-//! - Timing breaks down into DNS, TCP, TLS, TTFB, and total.
+//! - **Redirects are not followed** unless asked. When they are, they are followed by hand so
+//!   the chain can be recorded — and so an `Authorization` header is dropped the moment a
+//!   redirect crosses origins. Forwarding a token to a host the user never named is how a
+//!   credential leaks.
+//! - **Duplicate headers survive.** A request may legitimately carry the same header twice.
+//! - **A body on `GET` is sent.** Unconventional, occasionally required, and not this
+//!   crate's business to veto. Only `HEAD` is refused.
+//! - **Certificate verification is per request**, never global, so relaxing it for one call
+//!   against localhost cannot weaken a later call to production.
+//! - **Bodies are capped, not streamed into memory forever** — see
+//!   [`response::MAX_BODY_PREVIEW`].
+//! - **An unfilled `{path_param}` is an error**, not a request to a meaningless URL that
+//!   comes back as a confusing 404.
 //!
-//! Variables are resolved as late as possible — here, immediately before sending — so the
-//! window in which a plaintext secret exists is as small as it can be. See
-//! [`rl_model::VariableContext`].
+//! ## One honest compromise
 //!
-//! Status: not yet implemented. Scheduled for P1.
+//! `gzip`, `brotli` and `deflate` are decoded transparently, because an unreadable body helps
+//! nobody. The encoding the server applied is recorded in
+//! [`response::Body::content_encoding`] so the difference from `curl --raw` is visible rather
+//! than mysterious.
 //!
-//! Known risk: the timing breakdown needs a custom connector. If that proves fiddly, TTFB
-//! and total ship first and the breakdown is refined afterwards — it must not block P1.
+//! ## Timing
+//!
+//! Time-to-first-byte and total. The DNS / TCP / TLS breakdown needs a custom connector and
+//! is deferred rather than allowed to hold up the runner.
+//!
+//! ## Example
+//!
+//! ```no_run
+//! # async fn run() -> Result<(), rl_http::HttpError> {
+//! use rl_http::HttpEngine;
+//! use rl_model::{HttpMethod, RequestDraft};
+//!
+//! let engine = HttpEngine::new();
+//! let draft = RequestDraft::new(HttpMethod::Get, "https://api.example.com/users");
+//! let exchange = engine.execute(&draft).await?;
+//!
+//! println!("{} in {}ms", exchange.response.status, exchange.response.timing.total_ms);
+//! # Ok(())
+//! # }
+//! ```
 
 #![forbid(unsafe_code)]
+
+pub mod engine;
+pub mod error;
+pub mod response;
+
+pub use engine::HttpEngine;
+pub use error::{HttpError, Result};
+pub use response::{Body, Exchange, Hop, Response, SentRequest, Timing, MAX_BODY_PREVIEW};
