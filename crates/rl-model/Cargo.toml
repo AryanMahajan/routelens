@@ -1,0 +1,14 @@
+[package]
+name = "rl-model"
+description = "RouteLens unified API model and variable resolver. Pure data, no I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid = { version = "1", features = ["v4", "serde"] }

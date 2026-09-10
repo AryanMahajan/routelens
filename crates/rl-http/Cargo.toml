@@ -1,0 +1,14 @@
+[package]
+name = "rl-http"
+description = "The request execution engine. Deliberately low-magic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+rl-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

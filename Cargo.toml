@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+authors = ["Aryan Mahajan"]
+repository = "https://github.com/AryanMahajan/routelens"
+
+[workspace.dependencies]
+rl-model = { path = "crates/rl-model" }
+rl-discovery = { path = "crates/rl-discovery" }
+rl-import = { path = "crates/rl-import" }
+rl-http = { path = "crates/rl-http" }
+rl-workspace = { path = "crates/rl-workspace" }
+rl-core = { path = "crates/rl-core" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
