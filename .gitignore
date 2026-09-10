@@ -1,0 +1,36 @@
+# ---- RouteLens ----
+
+# Internal working notes: thinking-in-progress, not promises.
+docs/internal/
+
+# Local workspace tier: secrets, history, rebuildable caches.
+.routelens/local/
+
+# ---- Rust ----
+/target/
+**/*.rs.bk
+*.pdb
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ---- Tauri ----
+src-tauri/target/
+src-tauri/gen/
+
+# ---- Editors / OS ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Env ----
+.env
+.env.*
+!.env.example
