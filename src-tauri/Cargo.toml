@@ -1,0 +1,27 @@
+[package]
+name = "routelens"
+description = "RouteLens desktop shell. Command wrappers only -- all logic lives in rl-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "routelens_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rl-core.workspace = true
+rl-model.workspace = true
+rl-workspace.workspace = true
+rl-http.workspace = true
+rl-import.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["sync"] }

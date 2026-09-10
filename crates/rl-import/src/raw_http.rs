@@ -79,13 +79,16 @@ pub fn parse_raw_http(input: &str) -> Result<Imported<RequestDraft>> {
         match &host {
             Some(host) => {
                 // A host on 443 is being spoken to over TLS whatever the transcript says.
-                let scheme = if host.ends_with(":443") { "https" } else { scheme };
+                let scheme = if host.ends_with(":443") {
+                    "https"
+                } else {
+                    scheme
+                };
                 format!("{scheme}://{host}{target}")
             }
             None => {
-                warnings.push(
-                    "no Host header and a relative target, so the URL is incomplete".into(),
-                );
+                warnings
+                    .push("no Host header and a relative target, so the URL is incomplete".into());
                 target.to_string()
             }
         }
@@ -244,7 +247,9 @@ mod tests {
 
     #[test]
     fn a_body_containing_a_blank_line_is_kept_whole() {
-        let draft = parse("POST /x HTTP/1.1\nHost: x.test\nContent-Type: text/plain\n\nline one\n\nline three");
+        let draft = parse(
+            "POST /x HTTP/1.1\nHost: x.test\nContent-Type: text/plain\n\nline one\n\nline three",
+        );
         match &draft.body {
             BodyValue::Text { content, .. } => {
                 assert!(content.contains("line one"));

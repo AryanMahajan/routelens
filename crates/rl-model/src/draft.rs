@@ -403,7 +403,10 @@ impl RequestDraft {
     ///
     /// Returns the resolved draft alongside the set of secrets that went into it, so the
     /// caller can redact before writing anything to history.
-    pub fn resolve(&self, ctx: &VariableContext) -> Result<(RequestDraft, BTreeSet<String>), ResolveError> {
+    pub fn resolve(
+        &self,
+        ctx: &VariableContext,
+    ) -> Result<(RequestDraft, BTreeSet<String>), ResolveError> {
         let mut secrets_used = BTreeSet::new();
         let mut resolve = |text: &str| -> Result<String, ResolveError> {
             let Resolved {
@@ -500,7 +503,9 @@ mod tests {
             },
         );
         s.query_params = vec![
-            ParamSpec::new("page").with_type(TypeHint::Integer).required(),
+            ParamSpec::new("page")
+                .with_type(TypeHint::Integer)
+                .required(),
             ParamSpec::new("search"),
         ];
         s

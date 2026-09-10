@@ -240,7 +240,10 @@ mod tests {
 
     #[test]
     fn handles_windows_line_endings() {
-        assert_eq!(t("curl \\\r\n  https://x.test"), vec!["curl", "https://x.test"]);
+        assert_eq!(
+            t("curl \\\r\n  https://x.test"),
+            vec!["curl", "https://x.test"]
+        );
     }
 
     #[test]
@@ -258,7 +261,10 @@ mod tests {
 
     #[test]
     fn adjacent_quoted_and_bare_text_form_one_word() {
-        assert_eq!(t(r#"Content-Type:" application/json""#), vec!["Content-Type: application/json"]);
+        assert_eq!(
+            t(r#"Content-Type:" application/json""#),
+            vec!["Content-Type: application/json"]
+        );
         assert_eq!(t(r#"'a'"b"c"#), vec!["abc"]);
     }
 
@@ -277,7 +283,10 @@ mod tests {
 
     #[test]
     fn a_leading_hash_starts_a_comment() {
-        assert_eq!(t("curl https://x.test # trailing note"), vec!["curl", "https://x.test"]);
+        assert_eq!(
+            t("curl https://x.test # trailing note"),
+            vec!["curl", "https://x.test"]
+        );
     }
 
     #[test]

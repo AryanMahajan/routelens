@@ -176,7 +176,10 @@ mod tests {
     fn names_become_yaml_files() {
         let l = layout();
         assert!(l.collection_file("Users").unwrap().ends_with("Users.yaml"));
-        assert!(l.environment_file(" local ").unwrap().ends_with("local.yaml"));
+        assert!(l
+            .environment_file(" local ")
+            .unwrap()
+            .ends_with("local.yaml"));
     }
 
     #[test]

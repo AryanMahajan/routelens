@@ -521,7 +521,8 @@ mod tests {
         collection.push(req.clone());
         ws.save_collection(&collection).unwrap();
 
-        let on_disk = std::fs::read_to_string(ws.layout().collection_file("Auth").unwrap()).unwrap();
+        let on_disk =
+            std::fs::read_to_string(ws.layout().collection_file("Auth").unwrap()).unwrap();
         assert!(on_disk.contains("secret:api_token"));
         assert!(!on_disk.contains("s3cr3t"));
 
@@ -553,20 +554,31 @@ mod tests {
         collection.push(req);
         ws.save_collection(&collection).unwrap();
 
-        let text =
-            std::fs::read_to_string(ws.layout().collection_file("Users").unwrap()).unwrap();
+        let text = std::fs::read_to_string(ws.layout().collection_file("Users").unwrap()).unwrap();
 
         // Defaults are omitted rather than written out. A `body: {type: none}` block and a
         // full settings block on every GET turn a one-line change into a noisy diff.
         assert!(!text.contains("type: none"), "empty body should be omitted");
-        assert!(!text.contains("max_redirects"), "default settings should be omitted");
-        assert!(!text.contains("accept_invalid_certs"), "never persisted at all");
+        assert!(
+            !text.contains("max_redirects"),
+            "default settings should be omitted"
+        );
+        assert!(
+            !text.contains("accept_invalid_certs"),
+            "never persisted at all"
+        );
 
         // Block-structured YAML, so nested values sit on their own indented lines and a
         // one-field change shows up as a one-line diff. (Braces alone prove nothing here —
         // `{{base_url}}` is a variable reference, not flow style.)
-        assert!(text.contains("\n  query:\n"), "expected block YAML:\n{text}");
-        assert!(text.contains("\n  - key: page\n"), "expected block YAML:\n{text}");
+        assert!(
+            text.contains("\n  query:\n"),
+            "expected block YAML:\n{text}"
+        );
+        assert!(
+            text.contains("\n  - key: page\n"),
+            "expected block YAML:\n{text}"
+        );
 
         // The variable reference survives verbatim; nothing resolved it on the way to disk.
         assert!(text.contains("{{base_url}}"));

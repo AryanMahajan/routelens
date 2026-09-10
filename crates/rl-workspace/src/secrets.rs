@@ -81,9 +81,8 @@ impl FileSecretStore {
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(&self.path, perms).map_err(|e| {
-                WorkspaceError::io(format!("securing {}", self.path.display()), e)
-            })?;
+            std::fs::set_permissions(&self.path, perms)
+                .map_err(|e| WorkspaceError::io(format!("securing {}", self.path.display()), e))?;
         }
         Ok(())
     }

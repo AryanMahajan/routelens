@@ -269,7 +269,9 @@ mod tests {
 
     #[test]
     fn substitutes_several_in_one_string() {
-        let r = ctx().resolve("{{base_url}}/api/{{api_version}}/users").unwrap();
+        let r = ctx()
+            .resolve("{{base_url}}/api/{{api_version}}/users")
+            .unwrap();
         assert_eq!(r.value, "http://localhost:8000/api/v1/users");
     }
 
@@ -345,7 +347,9 @@ mod tests {
         c.environment.insert("loop".into(), "{{loop}}".into());
         assert_eq!(
             c.resolve("{{loop}}").unwrap_err(),
-            ResolveError::Cycle { name: "loop".into() }
+            ResolveError::Cycle {
+                name: "loop".into()
+            }
         );
     }
 
@@ -401,7 +405,9 @@ mod tests {
     #[test]
     fn redaction_masks_the_value_that_was_used() {
         let c = ctx();
-        let r = c.resolve("Authorization: Bearer {{secret:api_token}}").unwrap();
+        let r = c
+            .resolve("Authorization: Bearer {{secret:api_token}}")
+            .unwrap();
         let safe = c.redact(&r.value, &r.secrets_used);
         assert_eq!(safe, format!("Authorization: Bearer {REDACTION}"));
         assert!(!safe.contains("s3cr3t-value"));

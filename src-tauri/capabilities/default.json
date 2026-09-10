@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "RouteLens has no ambient filesystem access. A directory becomes readable only when the user picks it in a dialog, which is what makes opening an unfamiliar repository safe.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-message"
+  ]
+}

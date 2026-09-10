@@ -10,8 +10,8 @@
 use crate::error::{ImportError, Result};
 use crate::Imported;
 use rl_model::{
-    ApiKeyLocation, AuthRequirement, BodySchema, EndpointSpec, HttpMethod, Origin, ParamStyle,
-    ParamSpec, PathTemplate, TypeHint,
+    ApiKeyLocation, AuthRequirement, BodySchema, EndpointSpec, HttpMethod, Origin, ParamSpec,
+    ParamStyle, PathTemplate, TypeHint,
 };
 use serde_json::{Map, Value};
 
@@ -59,7 +59,10 @@ pub fn parse_openapi(text: &str) -> Result<Imported<OpenApiImport>> {
 pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
     let mut warnings = Vec::new();
 
-    let swagger_2 = doc.get("swagger").and_then(Value::as_str).is_some_and(|v| v.starts_with('2'));
+    let swagger_2 = doc
+        .get("swagger")
+        .and_then(Value::as_str)
+        .is_some_and(|v| v.starts_with('2'));
     let openapi_3 = doc.get("openapi").and_then(Value::as_str);
 
     match (swagger_2, openapi_3) {
@@ -105,7 +108,9 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
     };
 
     for (raw_path, item) in paths {
-        let Some(item) = item.as_object() else { continue };
+        let Some(item) = item.as_object() else {
+            continue;
+        };
 
         // Parameters declared on the path apply to every operation under it.
         let shared_params = item.get("parameters").and_then(Value::as_array);
@@ -147,16 +152,22 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
             let mut header_params: Vec<ParamSpec> = Vec::new();
             let mut body_from_v2: Option<BodySchema> = None;
 
-            for source in [shared_params, operation.get("parameters").and_then(Value::as_array)]
-                .into_iter()
-                .flatten()
+            for source in [
+                shared_params,
+                operation.get("parameters").and_then(Value::as_array),
+            ]
+            .into_iter()
+            .flatten()
             {
                 for parameter in source {
                     let parameter = resolve_refs(parameter, doc, 0, &mut Vec::new());
                     let Some(name) = parameter.get("name").and_then(Value::as_str) else {
                         continue;
                     };
-                    let location = parameter.get("in").and_then(Value::as_str).unwrap_or("query");
+                    let location = parameter
+                        .get("in")
+                        .and_then(Value::as_str)
+                        .unwrap_or("query");
 
                     // Swagger 2.0 declares request bodies as a parameter.
                     if location == "body" {
@@ -190,7 +201,11 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
             // Path parameters are already seeded from the template; enrich rather than
             // replace, so a parameter the document forgot to declare is not lost.
             for declared in path_params {
-                match spec.path_params.iter_mut().find(|p| p.name == declared.name) {
+                match spec
+                    .path_params
+                    .iter_mut()
+                    .find(|p| p.name == declared.name)
+                {
                     Some(existing) => *existing = declared,
                     None => spec.path_params.push(declared),
                 }
@@ -206,8 +221,7 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
                 .and_then(|s| auth_from_security(s, &schemes));
 
             if operation.get("deprecated").and_then(Value::as_bool) == Some(true) {
-                spec.metadata
-                    .insert("deprecated".into(), Value::Bool(true));
+                spec.metadata.insert("deprecated".into(), Value::Bool(true));
             }
 
             endpoints.push(spec);
@@ -343,7 +357,10 @@ fn extract_request_body(operation: &Map<String, Value>, doc: &Value) -> Option<B
         content_type: content_type.clone(),
         schema,
         example,
-        required: body.get("required").and_then(Value::as_bool).unwrap_or(false),
+        required: body
+            .get("required")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -366,9 +383,7 @@ fn auth_from_security(security: &Value, schemes: &Map<String, Value>) -> Option<
     let Some(scheme) = schemes.get(name) else {
         // The document referenced a scheme it never defined. Saying "auth of some kind" is
         // more useful than saying nothing.
-        return Some(AuthRequirement::Unknown {
-            hint: name.clone(),
-        });
+        return Some(AuthRequirement::Unknown { hint: name.clone() });
     };
 
     let kind = scheme.get("type").and_then(Value::as_str).unwrap_or("");
@@ -494,12 +509,20 @@ fn example_from_schema(schema: &Value, depth: usize) -> Value {
     if let Some(example) = schema.get("example").or_else(|| schema.get("default")) {
         return example.clone();
     }
-    if let Some(first) = schema.get("enum").and_then(Value::as_array).and_then(|e| e.first()) {
+    if let Some(first) = schema
+        .get("enum")
+        .and_then(Value::as_array)
+        .and_then(|e| e.first())
+    {
         return first.clone();
     }
     // A composed schema: the first branch is a reasonable representative.
     for key in ["allOf", "oneOf", "anyOf"] {
-        if let Some(first) = schema.get(key).and_then(Value::as_array).and_then(|a| a.first()) {
+        if let Some(first) = schema
+            .get(key)
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+        {
             return example_from_schema(first, depth + 1);
         }
     }
@@ -530,9 +553,7 @@ fn example_from_schema(schema: &Value, depth: usize) -> Value {
         (Some("boolean"), _) => Value::Bool(false),
         (Some("string"), Some("date-time")) => Value::from("1970-01-01T00:00:00Z"),
         (Some("string"), Some("date")) => Value::from("1970-01-01"),
-        (Some("string"), Some("uuid")) => {
-            Value::from("00000000-0000-0000-0000-000000000000")
-        }
+        (Some("string"), Some("uuid")) => Value::from("00000000-0000-0000-0000-000000000000"),
         (Some("string"), Some("email")) => Value::from("user@example.com"),
         (Some("string"), _) => Value::from(""),
         (Some("null"), _) => Value::Null,
@@ -621,13 +642,20 @@ mod tests {
 
     #[test]
     fn servers_become_base_url_candidates() {
-        assert_eq!(parse(&petstore()).servers, vec!["https://api.example.com/v1"]);
+        assert_eq!(
+            parse(&petstore()).servers,
+            vec!["https://api.example.com/v1"]
+        );
     }
 
     #[test]
     fn query_parameters_carry_type_and_default() {
         let api = parse(&petstore());
-        let list = api.endpoints.iter().find(|e| e.query_params.iter().any(|p| p.name == "limit")).unwrap();
+        let list = api
+            .endpoints
+            .iter()
+            .find(|e| e.query_params.iter().any(|p| p.name == "limit"))
+            .unwrap();
         let limit = &list.query_params[0];
         assert_eq!(limit.ty.as_ref(), Some(&TypeHint::Integer));
         assert_eq!(limit.default, Some(json!(20)));
@@ -643,7 +671,11 @@ mod tests {
             .find(|e| e.path.render(ParamStyle::Braces) == "/pets/{petId}")
             .unwrap();
 
-        let param = get_one.path_params.iter().find(|p| p.name == "petId").unwrap();
+        let param = get_one
+            .path_params
+            .iter()
+            .find(|p| p.name == "petId")
+            .unwrap();
         assert!(param.required);
         assert_eq!(param.ty.as_ref(), Some(&TypeHint::Uuid));
     }
@@ -809,7 +841,10 @@ paths:
         let endpoint = &api.endpoints[0];
         assert!(matches!(endpoint.origin, Origin::OpenApi { .. }));
         assert!(endpoint.origin.is_authoritative());
-        assert!(endpoint.source.is_none(), "a document knows no source location");
+        assert!(
+            endpoint.source.is_none(),
+            "a document knows no source location"
+        );
     }
 
     #[test]
@@ -852,10 +887,7 @@ paths:
     #[test]
     fn a_json_pointer_with_escapes_resolves() {
         let root = json!({"a~b": {"c/d": 42}});
-        assert_eq!(
-            resolve_pointer(&root, "#/a~0b/c~1d"),
-            Some(&json!(42))
-        );
+        assert_eq!(resolve_pointer(&root, "#/a~0b/c~1d"), Some(&json!(42)));
     }
 
     #[test]

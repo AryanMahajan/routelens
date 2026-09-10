@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* A developer tool that sits beside an editor all day. Dark, low-contrast chrome so the
+   response body is the brightest thing on screen. */
+@theme {
+  --color-ground: #0b1020;
+  --color-panel: #111827;
+  --color-raised: #1a2234;
+  --color-edge: #26304a;
+  --color-ink: #e8ecf6;
+  --color-muted: #8b96b0;
+  --color-accent: #38bdf8;
+
+  --color-method-get: #4ade80;
+  --color-method-post: #fbbf24;
+  --color-method-put: #60a5fa;
+  --color-method-patch: #c084fc;
+  --color-method-delete: #f87171;
+
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ground text-ink;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* Chrome's default scrollbars are far too loud against a dark panel. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-edge rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Inputs inherit almost nothing useful by default. */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}

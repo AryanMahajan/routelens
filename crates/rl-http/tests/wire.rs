@@ -87,7 +87,10 @@ impl TestServer {
     }
 
     fn last(&self) -> Received {
-        self.requests().last().cloned().expect("no request received")
+        self.requests()
+            .last()
+            .cloned()
+            .expect("no request received")
     }
 }
 
@@ -200,7 +203,10 @@ async fn query_parameters_and_headers_reach_the_server() {
 
     let received = server.last();
     assert!(received.target.contains("q=hello+world"));
-    assert!(!received.target.contains("skip"), "disabled rows must not be sent");
+    assert!(
+        !received.target.contains("skip"),
+        "disabled rows must not be sent"
+    );
     assert_eq!(received.header("x-custom"), Some("value"));
 }
 
@@ -414,7 +420,10 @@ async fn an_unfilled_path_parameter_fails_before_anything_is_sent() {
         }
         other => panic!("expected an unfilled placeholder error, got {other:?}"),
     }
-    assert!(server.requests().is_empty(), "nothing should have been sent");
+    assert!(
+        server.requests().is_empty(),
+        "nothing should have been sent"
+    );
 }
 
 #[tokio::test]
@@ -424,5 +433,8 @@ async fn a_connection_failure_is_reported_as_transient() {
     let draft = get("http://127.0.0.1:1/".to_string());
 
     let error = engine.execute(&draft).await.unwrap_err();
-    assert!(error.is_transient(), "a refused connection is worth retrying");
+    assert!(
+        error.is_transient(),
+        "a refused connection is worth retrying"
+    );
 }

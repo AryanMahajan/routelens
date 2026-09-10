@@ -318,14 +318,12 @@ pub(crate) fn body_from_text(data: &str, content_type: Option<&str>) -> BodyValu
         Some(ct) if ct.to_ascii_lowercase().contains("json") => BodyValue::Json {
             content: data.to_string(),
         },
-        Some(ct) if ct.to_ascii_lowercase().contains("x-www-form-urlencoded") => {
-            BodyValue::Form {
-                fields: parse_pairs(data)
-                    .into_iter()
-                    .map(|(k, v)| KeyValue::new(k, v))
-                    .collect(),
-            }
-        }
+        Some(ct) if ct.to_ascii_lowercase().contains("x-www-form-urlencoded") => BodyValue::Form {
+            fields: parse_pairs(data)
+                .into_iter()
+                .map(|(k, v)| KeyValue::new(k, v))
+                .collect(),
+        },
         Some(ct) => BodyValue::Text {
             content: data.to_string(),
             content_type: ct.to_string(),
@@ -422,7 +420,10 @@ mod tests {
 
     #[test]
     fn a_body_implies_post() {
-        assert_eq!(parse("curl https://x.test/ -d a=1").method, HttpMethod::Post);
+        assert_eq!(
+            parse("curl https://x.test/ -d a=1").method,
+            HttpMethod::Post
+        );
     }
 
     #[test]
@@ -453,7 +454,10 @@ mod tests {
 
     #[test]
     fn a_scheme_less_url_becomes_http() {
-        assert_eq!(parse("curl localhost:8000/health").url, "http://localhost:8000/health");
+        assert_eq!(
+            parse("curl localhost:8000/health").url,
+            "http://localhost:8000/health"
+        );
     }
 
     #[test]
@@ -462,7 +466,10 @@ mod tests {
             username: "aladdin".into(),
             password: "opensesame".into(),
         };
-        assert_eq!(parse("curl -u aladdin:opensesame https://x.test/").auth, expected);
+        assert_eq!(
+            parse("curl -u aladdin:opensesame https://x.test/").auth,
+            expected
+        );
         assert_eq!(
             parse("curl https://x.test/ -H 'Authorization: Basic YWxhZGRpbjpvcGVuc2VzYW1l'").auth,
             expected
@@ -534,7 +541,8 @@ mod tests {
 
     #[test]
     fn multipart_forms_carry_text_and_file_parts() {
-        let draft = parse("curl https://x.test/ -F name=Aryan -F 'avatar=@/tmp/a.png;type=image/png'");
+        let draft =
+            parse("curl https://x.test/ -F name=Aryan -F 'avatar=@/tmp/a.png;type=image/png'");
         match &draft.body {
             BodyValue::Multipart { parts } => {
                 assert!(matches!(&parts[0], FormPart::Text { value, .. } if value == "Aryan"));
@@ -568,9 +576,7 @@ mod tests {
 
     #[test]
     fn curl_managed_headers_are_dropped() {
-        let draft = parse(
-            "curl https://x.test/ -H 'Content-Length: 12' -H 'Host: x.test' -d a=1",
-        );
+        let draft = parse("curl https://x.test/ -H 'Content-Length: 12' -H 'Host: x.test' -d a=1");
         assert!(draft.headers.iter().all(|h| h.key != "Content-Length"));
         assert!(draft.headers.iter().all(|h| h.key != "Host"));
     }
@@ -590,7 +596,10 @@ mod tests {
 
     #[test]
     fn a_command_with_no_url_is_refused() {
-        assert!(matches!(parse_curl("curl -X POST"), Err(ImportError::NoUrl)));
+        assert!(matches!(
+            parse_curl("curl -X POST"),
+            Err(ImportError::NoUrl)
+        ));
     }
 
     #[test]

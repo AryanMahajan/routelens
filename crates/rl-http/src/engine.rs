@@ -66,8 +66,7 @@ impl HttpEngine {
     /// Resolution happens as late as possible, and this is the last stop before the wire.
     pub async fn execute(&self, draft: &RequestDraft) -> Result<Exchange> {
         let client = self.client(&draft.settings)?;
-        let method = Method::from_bytes(draft.method.as_str().as_bytes())
-            .unwrap_or(Method::GET);
+        let method = Method::from_bytes(draft.method.as_str().as_bytes()).unwrap_or(Method::GET);
 
         let mut url = build_url(draft)?;
         let mut headers = build_headers(draft)?;
@@ -89,13 +88,18 @@ impl HttpEngine {
                 request = apply_body(request, &draft.body)?;
             }
 
-            let built = request.build().map_err(|source| HttpError::Send { source })?;
+            let built = request
+                .build()
+                .map_err(|source| HttpError::Send { source })?;
 
             let sent = SentRequest {
                 method: built.method().to_string(),
                 url: built.url().to_string(),
                 headers: header_pairs(built.headers()),
-                body_size: built.body().and_then(|b| b.as_bytes()).map_or(0, <[u8]>::len),
+                body_size: built
+                    .body()
+                    .and_then(|b| b.as_bytes())
+                    .map_or(0, <[u8]>::len),
                 body_preview: built
                     .body()
                     .and_then(|b| b.as_bytes())
@@ -171,10 +175,7 @@ impl HttpEngine {
                 continue;
             }
 
-            let status_text = status
-                .canonical_reason()
-                .unwrap_or("")
-                .to_string();
+            let status_text = status.canonical_reason().unwrap_or("").to_string();
             let headers_out = header_pairs(response.headers());
             let content_type = response
                 .headers()
@@ -279,11 +280,10 @@ fn build_headers(draft: &RequestDraft) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
 
     for row in draft.headers.iter().filter(|r| r.enabled) {
-        let name = HeaderName::from_bytes(row.key.as_bytes()).map_err(|_| {
-            HttpError::InvalidHeader {
+        let name =
+            HeaderName::from_bytes(row.key.as_bytes()).map_err(|_| HttpError::InvalidHeader {
                 name: row.key.clone(),
-            }
-        })?;
+            })?;
         let value = HeaderValue::from_str(&row.value).map_err(|_| HttpError::InvalidHeader {
             name: row.key.clone(),
         })?;
@@ -309,8 +309,8 @@ fn build_headers(draft: &RequestDraft) -> Result<HeaderMap> {
             headers.insert(AUTHORIZATION, value);
         }
         AuthConfig::Basic { username, password } => {
-            let encoded = base64::engine::general_purpose::STANDARD
-                .encode(format!("{username}:{password}"));
+            let encoded =
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
             let value = HeaderValue::from_str(&format!("Basic {encoded}")).map_err(|_| {
                 HttpError::InvalidHeader {
                     name: "Authorization".into(),
@@ -324,12 +324,10 @@ fn build_headers(draft: &RequestDraft) -> Result<HeaderMap> {
             location,
         } => match location {
             rl_model::ApiKeyLocation::Header => {
-                let name = HeaderName::from_bytes(key.as_bytes()).map_err(|_| {
-                    HttpError::InvalidHeader { name: key.clone() }
-                })?;
-                let value = HeaderValue::from_str(value).map_err(|_| HttpError::InvalidHeader {
-                    name: key.clone(),
-                })?;
+                let name = HeaderName::from_bytes(key.as_bytes())
+                    .map_err(|_| HttpError::InvalidHeader { name: key.clone() })?;
+                let value = HeaderValue::from_str(value)
+                    .map_err(|_| HttpError::InvalidHeader { name: key.clone() })?;
                 headers.insert(name, value);
             }
             rl_model::ApiKeyLocation::Cookie => cookies.push(format!("{key}={value}")),
@@ -340,11 +338,10 @@ fn build_headers(draft: &RequestDraft) -> Result<HeaderMap> {
     }
 
     if !cookies.is_empty() {
-        let value = HeaderValue::from_str(&cookies.join("; ")).map_err(|_| {
-            HttpError::InvalidHeader {
+        let value =
+            HeaderValue::from_str(&cookies.join("; ")).map_err(|_| HttpError::InvalidHeader {
                 name: "Cookie".into(),
-            }
-        })?;
+            })?;
         headers.insert(COOKIE, value);
     }
 
@@ -412,7 +409,9 @@ fn apply_body(
                             .unwrap_or_else(|| "file".to_string());
                         let mut p = reqwest::multipart::Part::bytes(bytes).file_name(file_name);
                         if let Some(ct) = content_type {
-                            p = p.mime_str(ct).map_err(|source| HttpError::Send { source })?;
+                            p = p
+                                .mime_str(ct)
+                                .map_err(|source| HttpError::Send { source })?;
                         }
                         form = form.part(name.clone(), p);
                     }
@@ -442,7 +441,9 @@ fn preview_of_bytes(bytes: &[u8]) -> String {
 }
 
 fn same_origin(a: &Url, b: &Url) -> bool {
-    a.scheme() == b.scheme() && a.host_str() == b.host_str() && a.port_or_known_default() == b.port_or_known_default()
+    a.scheme() == b.scheme()
+        && a.host_str() == b.host_str()
+        && a.port_or_known_default() == b.port_or_known_default()
 }
 
 #[cfg(test)]
@@ -605,9 +606,21 @@ mod tests {
     #[test]
     fn origin_comparison_covers_scheme_host_and_port() {
         let a = Url::parse("https://api.example.com/x").unwrap();
-        assert!(same_origin(&a, &Url::parse("https://api.example.com/y").unwrap()));
-        assert!(!same_origin(&a, &Url::parse("http://api.example.com/y").unwrap()));
-        assert!(!same_origin(&a, &Url::parse("https://evil.example/y").unwrap()));
-        assert!(!same_origin(&a, &Url::parse("https://api.example.com:8443/y").unwrap()));
+        assert!(same_origin(
+            &a,
+            &Url::parse("https://api.example.com/y").unwrap()
+        ));
+        assert!(!same_origin(
+            &a,
+            &Url::parse("http://api.example.com/y").unwrap()
+        ));
+        assert!(!same_origin(
+            &a,
+            &Url::parse("https://evil.example/y").unwrap()
+        ));
+        assert!(!same_origin(
+            &a,
+            &Url::parse("https://api.example.com:8443/y").unwrap()
+        ));
     }
 }

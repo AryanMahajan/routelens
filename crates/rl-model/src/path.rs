@@ -301,7 +301,9 @@ fn parse_segment(raw: &str, style: ParamStyle) -> PathSegment {
         }
         ParamStyle::Bracket => {
             // `[[...slug]]` — optional catch-all
-            if let Some(inner) = strip_wrapping(raw, '[', ']').and_then(|i| strip_wrapping(i, '[', ']')) {
+            if let Some(inner) =
+                strip_wrapping(raw, '[', ']').and_then(|i| strip_wrapping(i, '[', ']'))
+            {
                 let name = inner.trim_start_matches("...");
                 return PathSegment::Param {
                     name: name.to_string(),
@@ -315,7 +317,11 @@ fn parse_segment(raw: &str, style: ParamStyle) -> PathSegment {
                 let name = inner.trim_start_matches("...");
                 return PathSegment::Param {
                     name: name.to_string(),
-                    ty: if catch_all { Some(TypeHint::Path) } else { None },
+                    ty: if catch_all {
+                        Some(TypeHint::Path)
+                    } else {
+                        None
+                    },
                     catch_all,
                     optional: false,
                 };
@@ -442,7 +448,9 @@ mod tests {
         let optional = PathTemplate::parse("/api/[[...slug]]", ParamStyle::Bracket);
         match &optional.segments[1] {
             PathSegment::Param {
-                catch_all, optional, ..
+                catch_all,
+                optional,
+                ..
             } => {
                 assert!(catch_all);
                 assert!(optional);

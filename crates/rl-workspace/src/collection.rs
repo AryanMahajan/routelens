@@ -83,7 +83,11 @@ mod tests {
         c.push(request("List users"));
         c.push(request("Create user"));
 
-        let names: Vec<_> = c.requests.iter().filter_map(|r| r.name.as_deref()).collect();
+        let names: Vec<_> = c
+            .requests
+            .iter()
+            .filter_map(|r| r.name.as_deref())
+            .collect();
         assert_eq!(names, vec!["List users", "Create user"]);
     }
 

@@ -82,9 +82,9 @@ impl RedactedEntry {
 fn redact_json(value: serde_json::Value, ctx: &VariableContext) -> serde_json::Value {
     match value {
         serde_json::Value::String(s) => serde_json::Value::String(ctx.redact_all(&s)),
-        serde_json::Value::Array(items) => serde_json::Value::Array(
-            items.into_iter().map(|v| redact_json(v, ctx)).collect(),
-        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(|v| redact_json(v, ctx)).collect())
+        }
         serde_json::Value::Object(map) => serde_json::Value::Object(
             map.into_iter()
                 .map(|(k, v)| (ctx.redact_all(&k), redact_json(v, ctx)))
@@ -240,7 +240,9 @@ impl History {
 
     pub fn count(&self) -> Result<usize> {
         self.conn
-            .query_row("SELECT COUNT(*) FROM history", [], |row| row.get::<_, i64>(0))
+            .query_row("SELECT COUNT(*) FROM history", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .map(|n| n as usize)
             .map_err(|source| WorkspaceError::Database { source })
     }
@@ -359,7 +361,9 @@ mod tests {
         let id = history.record(&e.redacted(&ctx())).unwrap();
         let stored = history.get(id).unwrap().unwrap();
 
-        assert!(!serde_json::to_string(&stored).unwrap().contains("s3cr3t-value"));
+        assert!(!serde_json::to_string(&stored)
+            .unwrap()
+            .contains("s3cr3t-value"));
     }
 
     #[test]

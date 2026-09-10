@@ -194,7 +194,9 @@ mod tests {
 
     #[test]
     fn non_json_bodies_do_not_pretty_print() {
-        assert!(body(b"<html></html>", Some("text/html")).pretty_json().is_none());
+        assert!(body(b"<html></html>", Some("text/html"))
+            .pretty_json()
+            .is_none());
     }
 
     #[test]
