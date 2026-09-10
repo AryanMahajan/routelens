@@ -22,7 +22,28 @@
 //!
 //! [enrich]: https://github.com/AryanMahajan/routelens/blob/main/docs/discovery/runtime-enrich.md
 //!
-//! Status: not yet implemented. Scheduled for P3 (core + FastAPI), P4 (Next.js, Express),
-//! P5 (Flask), P6 (Django).
+//! Status: P3 complete — project detection, source index, registration graph, constant
+//! folding, the FastAPI adapter, and base URL inference. Next.js and Express arrive in P4,
+//! Flask in P5, Django in P6.
 
 #![forbid(unsafe_code)]
+
+pub mod adapters;
+pub mod baseurl;
+pub mod error;
+pub mod facts;
+pub mod graph;
+pub mod index;
+pub mod project;
+pub mod scan;
+
+pub use adapters::{Detection, FrameworkAdapter};
+pub use baseurl::BaseUrlCandidate;
+pub use error::{DiscoveryError, Result};
+pub use facts::{
+    FactSink, ImportFact, MountFact, RouteFact, RouterFact, Span, SymbolId, SymbolRef,
+};
+pub use graph::{GraphWarning, RegistrationGraph, ResolvedRoute};
+pub use index::{ParsedFile, SourceIndex};
+pub use project::{Language, ProjectContext};
+pub use scan::{scan, scan_project, DetectedFramework, ScanResult, ScanStats};
