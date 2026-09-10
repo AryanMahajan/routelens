@@ -55,31 +55,36 @@ they are listed, and nested folders are expressed by nesting rather than by path
 version: 1
 name: Users
 requests:
-  - name: List users
-    method: GET
-    url: "{{base_url}}/api/v1/users"
-    query:
-      - { key: page,  value: "1",  enabled: true }
-      - { key: limit, value: "20", enabled: true }
-      - { key: debug, value: "1",  enabled: false }
-    headers:
-      - { key: Accept, value: application/json, enabled: true }
-    auth:
-      type: bearer
-      token: "{{secret:api_token}}"
+- id: 3f1a9c22-5f0e-4d51-9a7c-6b2e8d4f1a03
+  name: List users
+  method: GET
+  url: '{{base_url}}/api/v1/users'
+  query:
+  - key: page
+    value: '1'
+    enabled: true
+  - key: debug
+    value: '1'
+    enabled: false
+  auth:
+    type: bearer
+    token: '{{secret:api_token}}'
 
-  - name: Create user
-    method: POST
-    url: "{{base_url}}/api/v1/users"
-    headers:
-      - { key: Content-Type, value: application/json, enabled: true }
-    body:
-      type: json
-      content: |
-        {
-          "name": "Example",
-          "email": "example@example.com"
-        }
+- id: 9c4b7e10-2d83-4f6a-b105-7e39a2c8d514
+  name: Create user
+  method: POST
+  url: '{{base_url}}/api/v1/users'
+  headers:
+  - key: Content-Type
+    value: application/json
+    enabled: true
+  body:
+    type: json
+    content: |
+      {
+        "name": "Example",
+        "email": "example@example.com"
+      }
 ```
 
 Design notes:
@@ -91,6 +96,14 @@ Design notes:
 - **Secrets appear only as `{{secret:name}}` references.** Never values. See
   [secrets](secrets.md).
 - **Bodies use block scalars**, so JSON stays readable and diffs line-by-line.
+- **Defaults are omitted.** A request with no body and default transport settings writes
+  neither, so a `GET` stays four lines rather than fifteen.
+- **`id` is a stable identifier**, written once and never rewritten. Requests are referred to
+  by name in the UI, but a name can be edited — the id is what history and open tabs point at
+  so a rename does not break them.
+- **Transport settings are per request**, and `accept_invalid_certs` is *never* written at
+  all. It lasts for the session that set it. Persisting it would hand the next person who
+  clones the repository a request with certificate verification silently switched off.
 
 ## Environments
 

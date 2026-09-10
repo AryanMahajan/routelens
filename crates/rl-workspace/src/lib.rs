@@ -27,12 +27,46 @@
 //! | Private — secret values | no | no, they are real credentials |
 //! | Disposable — history, index | no | yes, it rebuilds |
 //!
-//! `.routelens/.gitignore` is written at workspace creation, not after someone notices. Git
-//! friendliness plus bearer tokens is exactly how credentials reach version control.
+//! `.routelens/.gitignore` is written at creation, and restored on open if it went missing.
+//! Git friendliness plus bearer tokens is exactly how credentials reach version control.
 //!
-//! Serialization uses stable key ordering so diffs reflect real edits rather than serializer
+//! Committed files use sorted keys, so a diff reflects a real edit rather than serializer
 //! churn — these files are meant to be reviewed in a pull request.
 //!
-//! Status: not yet implemented. Scheduled for P0 (layout, secrets) and P1 (history).
+//! ## Example
+//!
+//! ```no_run
+//! use rl_workspace::{Workspace, WorkspaceKind, Environment};
+//! use rl_workspace::secrets::SecretStore;
+//!
+//! let ws = Workspace::open_or_create(".", "myproject", WorkspaceKind::Project)?;
+//!
+//! let mut env = Environment::new("local");
+//! env.set("base_url", "http://localhost:8000").expect_secret("api_token");
+//! ws.save_environment(&env)?;
+//!
+//! ws.secrets().set("api_token", "s3cr3t")?;
+//!
+//! // Globals, environment, and secrets, assembled for a request to resolve against.
+//! let ctx = ws.variable_context(Some("local"))?;
+//! # Ok::<(), rl_workspace::WorkspaceError>(())
+//! ```
+//!
+//! Status: P0 complete — layout, manifest, collections, environments, secrets.
+//! History and the source index (both SQLite) arrive with P1 and P3.
 
 #![forbid(unsafe_code)]
+
+pub mod collection;
+pub mod environment;
+pub mod error;
+pub mod layout;
+pub mod secrets;
+pub mod workspace;
+
+pub use collection::Collection;
+pub use environment::Environment;
+pub use error::{Result, WorkspaceError};
+pub use layout::Layout;
+pub use secrets::{FileSecretStore, SecretStore};
+pub use workspace::{ProjectRef, Workspace, WorkspaceKind, WorkspaceManifest};

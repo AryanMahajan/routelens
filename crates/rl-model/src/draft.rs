@@ -87,6 +87,12 @@ pub enum AuthConfig {
     },
 }
 
+impl AuthConfig {
+    pub fn is_none(&self) -> bool {
+        matches!(self, AuthConfig::None)
+    }
+}
+
 /// One part of a multipart body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -170,7 +176,13 @@ pub struct RequestSettings {
     #[serde(default = "default_max_redirects")]
     pub max_redirects: u8,
     /// For local development against self-signed certificates.
-    #[serde(default)]
+    ///
+    /// Deliberately **not serialized**. `docs/security.md` promises this toggle is "never
+    /// sticky", and persisting it into a committed collection would break that promise in
+    /// the worst way: the next person to clone the repository would inherit
+    /// certificate verification being off, silently, without ever having chosen it.
+    /// It lasts for the session that set it and no longer.
+    #[serde(skip)]
     pub accept_invalid_certs: bool,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
@@ -192,6 +204,13 @@ impl Default for RequestSettings {
             accept_invalid_certs: false,
             timeout_ms: default_timeout_ms(),
         }
+    }
+}
+
+impl RequestSettings {
+    /// Whether these are the defaults, and so need not be written down.
+    pub fn is_default(&self) -> bool {
+        *self == RequestSettings::default()
     }
 }
 
@@ -219,11 +238,13 @@ pub struct RequestDraft {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cookies: Vec<KeyValue>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "AuthConfig::is_none")]
     pub auth: AuthConfig,
-    #[serde(default)]
+    // Bodies and settings are omitted when they carry nothing, so a committed collection
+    // stays readable. A `body: {type: none}` block on every GET is noise in a diff.
+    #[serde(default, skip_serializing_if = "BodyValue::is_none")]
     pub body: BodyValue,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "RequestSettings::is_default")]
     pub settings: RequestSettings,
 }
 
@@ -618,6 +639,20 @@ mod tests {
         let s = RequestSettings::default();
         assert!(!s.follow_redirects);
         assert!(!s.accept_invalid_certs);
+    }
+
+    #[test]
+    fn disabling_cert_verification_never_persists() {
+        // A saved collection must not be able to hand the next person who clones the repo a
+        // request with certificate verification silently switched off.
+        let mut draft = RequestDraft::new(HttpMethod::Get, "https://localhost:8443/x");
+        draft.settings.accept_invalid_certs = true;
+
+        let json = serde_json::to_string(&draft).unwrap();
+        assert!(!json.contains("accept_invalid_certs"));
+
+        let reloaded: RequestDraft = serde_json::from_str(&json).unwrap();
+        assert!(!reloaded.settings.accept_invalid_certs);
     }
 
     #[test]
