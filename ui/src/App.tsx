@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, CoreError } from "./api";
-import { emptyRequest, type Exchange, type RequestDraft, type WorkspaceInfo } from "./types";
+import {
+  emptyRequest,
+  type EndpointSpec,
+  type Exchange,
+  type RequestDraft,
+  type ScanResult,
+  type WorkspaceInfo,
+} from "./types";
 import { ImportDialog } from "./components/ImportDialog";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseViewer } from "./components/ResponseViewer";
@@ -15,6 +22,8 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [importing, setImporting] = useState(false);
   const [saveTarget, setSaveTarget] = useState("Saved");
+  const [scan, setScan] = useState<ScanResult | null>(null);
+  const [scanning, setScanning] = useState(false);
   // Bumped to make the sidebar reload after something writes to the workspace.
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -34,8 +43,37 @@ export default function App() {
 
     try {
       const name = picked.split(/[/\\]/).filter(Boolean).pop() ?? "workspace";
-      setWorkspace(await api.openOrCreateWorkspace(picked, name));
+      const info = await api.openOrCreateWorkspace(picked, name);
+      setWorkspace(info);
+      setScan(null);
       refresh();
+      // Discovery is the point of opening a project, so do it without being asked.
+      if (info.kind === "project") void runScan();
+    } catch (e) {
+      setError(e instanceof CoreError ? e.message : String(e));
+    }
+  }
+
+  async function runScan() {
+    setScanning(true);
+    setError(null);
+    try {
+      const result = await api.scanProject();
+      setScan(result);
+      // A scan may have seeded the environment's base_url.
+      setWorkspace(await api.workspaceInfo());
+    } catch (e) {
+      setError(e instanceof CoreError ? e.message : String(e));
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function openEndpoint(endpoint: EndpointSpec) {
+    setError(null);
+    try {
+      setRequest(await api.openEndpoint(endpoint.id));
+      setExchange(null);
     } catch (e) {
       setError(e instanceof CoreError ? e.message : String(e));
     }
@@ -92,6 +130,10 @@ export default function App() {
         onOpenWorkspace={openWorkspace}
         onImport={() => setImporting(true)}
         onWorkspaceChange={setWorkspace}
+        scan={scan}
+        scanning={scanning}
+        onScan={runScan}
+        onOpenEndpoint={openEndpoint}
         onOpenRequest={(saved) => {
           setRequest(saved);
           setExchange(null);

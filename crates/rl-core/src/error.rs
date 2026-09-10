@@ -12,8 +12,31 @@ pub enum CoreError {
     #[error("undefined variable(s): {}", .names.join(", "))]
     UndefinedVariables { names: Vec<String> },
 
+    #[error("this workspace has no project attached, so there is nothing to scan")]
+    NotAProject,
+
+    #[error("no scan has been run yet")]
+    NoScan,
+
+    #[error("no endpoint with id {id:?}")]
+    NoSuchEndpoint { id: String },
+
+    /// Refused deliberately: sending a request to a path RouteLens could not work out would
+    /// hit a meaningless URL and fail in a way the developer blames on their own code.
+    #[error("`{id}` has a path RouteLens could not resolve: {}", .expressions.join(", "))]
+    UnresolvedEndpoint {
+        id: String,
+        expressions: Vec<String>,
+    },
+
+    #[error("no source file at {}", .path.display())]
+    NoSuchSource { path: std::path::PathBuf },
+
     #[error(transparent)]
     Workspace(#[from] rl_workspace::WorkspaceError),
+
+    #[error(transparent)]
+    Discovery(#[from] rl_discovery::DiscoveryError),
 
     #[error(transparent)]
     Http(#[from] rl_http::HttpError),

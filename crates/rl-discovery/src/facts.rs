@@ -41,7 +41,14 @@ impl SymbolId {
 
 impl std::fmt::Display for SymbolId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.module.display(), self.name)
+        // Forward slashes regardless of platform: these strings reach the UI and snapshot
+        // tests, and a warning should not read differently on Windows.
+        write!(
+            f,
+            "{}:{}",
+            self.module.display().to_string().replace('\\', "/"),
+            self.name
+        )
     }
 }
 

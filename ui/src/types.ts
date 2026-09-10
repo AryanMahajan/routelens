@@ -179,3 +179,59 @@ export function emptyRequest(): RequestDraft {
     },
   };
 }
+
+// --- discovery ---------------------------------------------------------------------------
+
+export interface SourceView {
+  file: string;
+  line: number;
+}
+
+/** One discovered endpoint, as the core flattens it for this UI. */
+export interface EndpointSpec {
+  id: string;
+  method: HttpMethod;
+  /** Rendered in {brace} form. */
+  path: string;
+  display: string;
+  group?: string | null;
+  summary?: string | null;
+  source?: SourceView | null;
+  /** The router this belongs to is never mounted. */
+  orphaned: boolean;
+  /** At least one path segment could not be determined statically. */
+  unresolved: boolean;
+  /** The source expressions that defeated resolution. */
+  unresolved_exprs: string[];
+  auth: boolean;
+  has_body: boolean;
+  query: string[];
+}
+
+export interface DetectedFramework {
+  id: string;
+  score: number;
+  evidence: string[];
+}
+
+export interface BaseUrlCandidate {
+  url: string;
+  source: string;
+  confidence: number;
+}
+
+export interface ScanStats {
+  files_seen: number;
+  files_parsed: number;
+  routers_found: number;
+  endpoints_found: number;
+  unresolved: number;
+}
+
+export interface ScanResult {
+  frameworks: DetectedFramework[];
+  endpoints: EndpointSpec[];
+  base_urls: BaseUrlCandidate[];
+  warnings: string[];
+  stats: ScanStats;
+}

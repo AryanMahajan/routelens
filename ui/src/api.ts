@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Collection,
+  ScanResult,
   Environment,
   Exchange,
   HistoryEntry,
@@ -57,6 +58,13 @@ export const api = {
   loadCollection: (name: string) => call<Collection>("load_collection", { name }),
   saveRequest: (collection: string, request: RequestDraft) =>
     call<void>("save_request", { collection, request }),
+
+  // --- discovery (reads source; never executes it) ---
+  scanProject: () => call<ScanResult>("scan_project"),
+  openEndpoint: (id: string, baseUrl?: string) =>
+    call<RequestDraft>("open_endpoint", { id, baseUrl: baseUrl ?? null }),
+  revealInEditor: (file: string, line: number) =>
+    call<void>("reveal_in_editor", { file, line }),
 
   // --- sending ---
   send: (request: RequestDraft) => call<Exchange>("send_request", { request }),

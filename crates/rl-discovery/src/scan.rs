@@ -44,7 +44,7 @@ pub struct ScanStats {
 }
 
 /// Everything one scan produced.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub root: PathBuf,
     pub frameworks: Vec<DetectedFramework>,

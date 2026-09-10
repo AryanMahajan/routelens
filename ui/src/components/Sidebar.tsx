@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Collection, HistoryEntry, RequestDraft, WorkspaceInfo } from "../types";
+import type {
+  Collection,
+  EndpointSpec,
+  HistoryEntry,
+  RequestDraft,
+  ScanResult,
+  WorkspaceInfo,
+} from "../types";
+import { Explorer } from "./Explorer";
 import { MethodBadge } from "./MethodBadge";
 
-type Panel = "collections" | "history";
+type Panel = "api" | "collections" | "history";
 
 export function Sidebar({
   workspace,
@@ -12,6 +20,10 @@ export function Sidebar({
   onImport,
   onWorkspaceChange,
   refreshKey,
+  scan,
+  scanning,
+  onScan,
+  onOpenEndpoint,
 }: {
   workspace: WorkspaceInfo | null;
   onOpenRequest: (request: RequestDraft) => void;
@@ -19,8 +31,13 @@ export function Sidebar({
   onImport: () => void;
   onWorkspaceChange: (info: WorkspaceInfo) => void;
   refreshKey: number;
+  scan: ScanResult | null;
+  scanning: boolean;
+  onScan: () => void;
+  onOpenEndpoint: (endpoint: EndpointSpec) => void;
 }) {
-  const [panel, setPanel] = useState<Panel>("collections");
+  // The API tree is the reason RouteLens exists, so it opens first for a project workspace.
+  const [panel, setPanel] = useState<Panel>("api");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
@@ -108,7 +125,7 @@ export function Sidebar({
 
       {/* Panel switch */}
       <div className="flex shrink-0 border-b border-edge">
-        {(["collections", "history"] as Panel[]).map((name) => (
+        {(["api", "collections", "history"] as Panel[]).map((name) => (
           <button
             key={name}
             onClick={() => setPanel(name)}
@@ -123,7 +140,24 @@ export function Sidebar({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-2">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {panel === "api" &&
+          (workspace?.kind === "project" ? (
+            <Explorer
+              scan={scan}
+              scanning={scanning}
+              onScan={onScan}
+              onOpenEndpoint={onOpenEndpoint}
+            />
+          ) : (
+            <p className="px-3 py-4 text-muted">
+              {workspace
+                ? "This workspace has no project attached, so there is nothing to scan."
+                : "Open a project to discover its API."}
+            </p>
+          ))}
+
+        {panel !== "api" && <div className="min-h-0 flex-1 overflow-auto p-2">
         {panel === "collections" && (
           <>
             {collections.length === 0 && (
@@ -184,6 +218,7 @@ export function Sidebar({
             ))}
           </>
         )}
+        </div>}
       </div>
 
       <div className="shrink-0 border-t border-edge p-2">

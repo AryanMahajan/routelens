@@ -1,0 +1,133 @@
+{
+  "frameworks": [
+    "fastapi"
+  ],
+  "base_url": "http://localhost:9000",
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{user_id}",
+      "group": "users",
+      "source": "app/api/users.py:27",
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/?/stats",
+      "group": "admin",
+      "source": "app/api/admin.py:8",
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users",
+      "group": "users",
+      "source": "app/api/users.py:10",
+      "query": [
+        "limit",
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/{user_id}",
+      "group": "users",
+      "source": "app/api/users.py:16",
+      "headers": [
+        "X-Trace-Id"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/dynamic/?",
+      "source": "app/api/dynamic.py:12",
+      "orphaned": true,
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "group": "meta",
+      "source": "app/main.py:20"
+    },
+    {
+      "method": "GET",
+      "path": "/orphan/forgotten",
+      "source": "app/api/orphan.py:8",
+      "orphaned": true
+    },
+    {
+      "method": "GET",
+      "path": "/v1/items",
+      "group": "items",
+      "source": "app/api/items.py:8",
+      "query": [
+        "page"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/items/{item_id}",
+      "group": "items",
+      "source": "app/api/items.py:13"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/items",
+      "group": "items",
+      "source": "app/api/items.py:8",
+      "query": [
+        "page"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v2/items/{item_id}",
+      "group": "items",
+      "source": "app/api/items.py:13"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users",
+      "group": "users",
+      "source": "app/api/users.py:22",
+      "has_body": true,
+      "has_auth": true
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/items/{item_id}",
+      "group": "items",
+      "source": "app/api/items.py:13"
+    },
+    {
+      "method": "PUT",
+      "path": "/v2/items/{item_id}",
+      "group": "items",
+      "source": "app/api/items.py:13"
+    }
+  ],
+  "warnings": [
+    "app/api/orphan.py:router",
+    "never mounted",
+    "app/api/dynamic.py:router"
+  ],
+  "expected_misses": [
+    {
+      "path": "/dynamic/alpha",
+      "reason": "registered in a loop; static analysis sees one add_api_route call whose f-string path depends on the loop variable, so it reports /dynamic/? rather than three concrete routes"
+    },
+    {
+      "path": "/dynamic/beta",
+      "reason": "same loop as /dynamic/alpha"
+    },
+    {
+      "path": "/dynamic/gamma",
+      "reason": "same loop as /dynamic/alpha"
+    },
+    {
+      "path": "/admin/stats",
+      "reason": "mounted at settings.API_PREFIX, which is read from the environment at import time; reported as /?/stats so the gap is visible. Runtime enrich resolves this."
+    }
+  ]
+}

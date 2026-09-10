@@ -2977,6 +2977,7 @@ name = "routelens"
 version = "0.1.0"
 dependencies = [
  "rl-core",
+ "rl-discovery",
  "rl-http",
  "rl-import",
  "rl-model",

@@ -20,6 +20,7 @@ rl-model.workspace = true
 rl-workspace.workspace = true
 rl-http.workspace = true
 rl-import.workspace = true
+rl-discovery.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }

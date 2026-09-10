@@ -135,11 +135,10 @@ impl RegistrationGraph {
                 let key = (reference.module.clone(), qualifier.to_string());
                 match self.import_bindings.get(&key) {
                     Some(Binding::Module(module)) => Some(SymbolId::new(module.clone(), attribute)),
-                    // `from . import users` binds a symbol whose module we can still use.
-                    Some(Binding::Symbol(symbol)) => Some(SymbolId::new(
-                        symbol.module.join(&symbol.name).with_extension("py"),
-                        attribute,
-                    )),
+                    // A qualifier bound to a *value* rather than a module — `from .models
+                    // import user` then `user.router`. Reading an attribute off a value
+                    // needs evaluation, so this is reported rather than guessed at.
+                    Some(Binding::Symbol(_)) => None,
                     None => None,
                 }
             }
@@ -351,7 +350,25 @@ fn resolve_imports(
         };
 
         let binding = match &import.original {
-            Some(name) => Binding::Symbol(SymbolId::new(module, name)),
+            Some(name) => {
+                // `from .api import admin` looks like a symbol import but usually names a
+                // *submodule*, so `admin.router` means `api/admin.py`'s `router`. Try that
+                // first; fall back to a symbol when no such file exists.
+                let nested = if import.source.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{}.{}", import.source, name)
+                };
+                match crate::facts::resolve_python_module(
+                    &import.module,
+                    &nested,
+                    import.level,
+                    known,
+                ) {
+                    Some(submodule) => Binding::Module(submodule),
+                    None => Binding::Symbol(SymbolId::new(module, name)),
+                }
+            }
             None => Binding::Module(module),
         };
 

@@ -7,7 +7,7 @@
 //! `cargo test`, with no GUI harness in the loop. If a command in this file starts making
 //! decisions, the decision belongs in `rl-core` instead.
 
-use rl_core::{RouteLens, WorkspaceInfo};
+use rl_core::{ProjectScan, RouteLens, WorkspaceInfo};
 use rl_http::Exchange;
 use rl_model::RequestDraft;
 use rl_workspace::{Collection, Environment, HistoryEntry, WorkspaceKind};
@@ -149,6 +149,39 @@ async fn save_request(
     Ok(state.app.lock().await.save_request(&collection, request)?)
 }
 
+// --- discovery ---------------------------------------------------------------------------
+
+/// Scan the open project for endpoints.
+///
+/// Static analysis only. Nothing in the project is executed — see `docs/security.md`.
+#[tauri::command]
+async fn scan_project(state: State<'_, AppState>) -> CommandResult<ProjectScan> {
+    Ok(state.app.lock().await.scan()?)
+}
+
+#[tauri::command]
+async fn open_endpoint(
+    state: State<'_, AppState>,
+    id: String,
+    base_url: Option<String>,
+) -> CommandResult<RequestDraft> {
+    Ok(state
+        .app
+        .lock()
+        .await
+        .request_for(&id, base_url.as_deref())?)
+}
+
+/// Jump to where an endpoint is defined.
+#[tauri::command]
+async fn reveal_in_editor(
+    state: State<'_, AppState>,
+    file: PathBuf,
+    line: u32,
+) -> CommandResult<()> {
+    Ok(state.app.lock().await.reveal_in_editor(&file, line)?)
+}
+
 // --- sending -----------------------------------------------------------------------------
 
 #[tauri::command]
@@ -257,6 +290,9 @@ pub fn run() {
             delete_secret,
             load_collection,
             save_request,
+            scan_project,
+            open_endpoint,
+            reveal_in_editor,
             send_request,
             history,
             clear_history,
