@@ -12,3 +12,6 @@ rl-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+base64 = "0.22"
+url = "2"
+yaml_serde = "0.10"

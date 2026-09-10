@@ -885,10 +885,13 @@ dependencies = [
 name = "rl-import"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "rl-model",
  "serde",
  "serde_json",
  "thiserror",
+ "url",
+ "yaml_serde",
 ]
 
 [[package]]
