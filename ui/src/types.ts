@@ -212,6 +212,13 @@ export interface HistoryEntry {
   response: unknown;
 }
 
+/*
+ * Rule for everything above: any `Vec` the core marks `skip_serializing_if = "is_empty"`
+ * arrives as *absent*, not `[]`. `api.ts` fills those in (`normalizeRequest`, `send`,
+ * `loadEnvironment`, `loadCollection`) so components can rely on the plain types. When
+ * adding a wire type, check the Rust struct's serde attributes before reading `.length`.
+ */
+
 /** Every import carries what it could not honour, so nothing is silently dropped. */
 export interface ImportResult<T> {
   value: T;

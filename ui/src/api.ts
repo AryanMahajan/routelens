@@ -48,7 +48,10 @@ export const api = {
 
   // --- environments ---
   setEnvironment: (name: string | null) => call<WorkspaceInfo>("set_environment", { name }),
-  loadEnvironment: (name: string) => call<Environment>("load_environment", { name }),
+  loadEnvironment: async (name: string): Promise<Environment> => {
+    const wire = await call<Environment>("load_environment", { name });
+    return { ...wire, secrets: wire.secrets ?? [] };
+  },
   saveEnvironment: (environment: Environment) =>
     call<void>("save_environment", { environment }),
   deleteEnvironment: (name: string) => call<WorkspaceInfo>("delete_environment", { name }),
@@ -78,7 +81,11 @@ export const api = {
     call<void>("reveal_in_editor", { file, line }),
 
   // --- sending ---
-  send: (request: RequestDraft) => call<Exchange>("send_request", { request }),
+  send: async (request: RequestDraft): Promise<Exchange> => {
+    const wire = await call<Exchange>("send_request", { request });
+    // `redirects` is omitted on the wire when empty — which is every direct response.
+    return { ...wire, response: { ...wire.response, redirects: wire.response.redirects ?? [] } };
+  },
 
   // --- history ---
   history: (limit = 50) => call<HistoryEntry[]>("history", { limit }),
