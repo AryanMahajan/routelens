@@ -224,3 +224,44 @@ fn fastapi_fixture_reports_the_expected_problems() {
         "the settings-derived prefix should be an unresolved gap, not a guess"
     );
 }
+
+#[test]
+fn nextjs_fixture_matches_snapshot() {
+    check("nextjs");
+}
+
+#[test]
+fn express_fixture_matches_snapshot() {
+    check("express");
+}
+
+/// The Express fixture has one of everything the graph is meant to handle.
+#[test]
+fn express_fixture_reports_the_expected_problems() {
+    let root = fixtures_dir().join("express");
+    let result = scan(&root).unwrap();
+    let warnings = result.warnings.join("\n");
+
+    assert!(
+        warnings.contains("legacy.js:router") && warnings.contains("never mounted"),
+        "the unmounted router should be reported, got:\n{warnings}"
+    );
+    assert!(
+        warnings.contains("createV2Router()"),
+        "the factory-built router should be reported as unfollowable, got:\n{warnings}"
+    );
+    assert!(
+        result
+            .endpoints
+            .iter()
+            .any(|e| e.path.unresolved_exprs() == vec!["process.env.API_PREFIX"]),
+        "the env prefix should be an unresolved gap, not a guess"
+    );
+    assert!(
+        !result
+            .endpoints
+            .iter()
+            .any(|e| e.path.to_string().contains("from-a-test")),
+        "test files must not contribute routes"
+    );
+}

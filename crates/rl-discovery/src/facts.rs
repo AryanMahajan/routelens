@@ -75,12 +75,26 @@ impl SymbolRef {
     /// Split a dotted reference into its qualifier and final attribute.
     ///
     /// `users.router` → (`Some("users")`, `"router"`); `router` → (`None`, `"router"`).
+    ///
+    /// Only a trailing *identifier* counts as an attribute. An inline `require("./x.js")`
+    /// is a single reference, and the dot in its file name must not be mistaken for one.
     pub fn split(&self) -> (Option<&str>, &str) {
         match self.name.rsplit_once('.') {
-            Some((qualifier, attribute)) => (Some(qualifier), attribute),
-            None => (None, self.name.as_str()),
+            Some((qualifier, attribute)) if is_identifier(attribute) => {
+                (Some(qualifier), attribute)
+            }
+            _ => (None, self.name.as_str()),
         }
     }
+}
+
+fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
 }
 
 /// A router was created.
@@ -141,6 +155,10 @@ pub struct MountFact {
     pub child: SymbolRef,
     pub prefix: PathTemplate,
     pub group: Option<String>,
+    /// Auth the mount imposes on everything under it: `app.use("/admin", requireAuth,
+    /// adminRouter)`, `include_router(r, dependencies=[Depends(auth)])`. Inherited by
+    /// every route reached through this mount that declares none of its own.
+    pub auth: Option<AuthRequirement>,
     pub span: Span,
 }
 
@@ -154,13 +172,37 @@ pub struct ImportFact {
     pub module: PathBuf,
     /// The name bound locally.
     pub local_name: String,
-    /// The module path as written, without leading dots: `api.users`, or `` for `from . import x`.
+    /// The module as written, in the importing language's own convention:
+    ///
+    /// - Python: dotted, without leading dots — `api.users`, or `` for `from . import x`.
+    /// - JavaScript: the specifier — `./routes/users`, or a bare package name.
+    /// - A leading `/` means *project-root-relative and already resolved*. No language
+    ///   writes imports this way; it is how a file-system-routed framework attaches every
+    ///   route file to one virtual root without an import statement existing anywhere.
     pub source: String,
     /// The name inside the source module, or `None` when the module itself was bound
-    /// (`import api.users as users`).
+    /// (`import api.users as users`, `import * as users from "./users"`).
+    ///
+    /// JavaScript's default export is the name `default`, so `const x = require("./m")`
+    /// and `import x from "./m"` both bind `x` to `default` in `m`.
     pub original: Option<String>,
-    /// Leading dots on a relative import. `0` means absolute.
+    /// Leading dots on a relative Python import. `0` means absolute; JavaScript ignores it.
     pub level: u32,
+}
+
+/// A module made a local name available under an exported name.
+///
+/// This is how `module.exports = router` in `routes/users.js` connects to the
+/// `require("./routes/users")` in `app.js`: the import binds `default`, and this fact says
+/// `default` is really `router`. Python modules export every top-level name, so the Python
+/// adapters never emit one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportFact {
+    pub module: PathBuf,
+    /// The name importers see: `default`, or a named export.
+    pub exported: String,
+    /// The name inside the module.
+    pub local: String,
 }
 
 /// Where adapters push what they found.
@@ -170,6 +212,7 @@ pub struct FactSink {
     pub routes: Vec<RouteFact>,
     pub mounts: Vec<MountFact>,
     pub imports: Vec<ImportFact>,
+    pub exports: Vec<ExportFact>,
     /// Anything the adapter noticed but could not express.
     pub warnings: Vec<String>,
 }
@@ -195,6 +238,10 @@ impl FactSink {
         self.imports.push(fact);
     }
 
+    pub fn export(&mut self, fact: ExportFact) {
+        self.exports.push(fact);
+    }
+
     pub fn warn(&mut self, message: impl Into<String>) {
         self.warnings.push(message.into());
     }
@@ -208,8 +255,113 @@ impl FactSink {
         self.routes.extend(other.routes);
         self.mounts.extend(other.mounts);
         self.imports.extend(other.imports);
+        self.exports.extend(other.exports);
         self.warnings.extend(other.warnings);
     }
+}
+
+/// Resolve an import's source to a file in the project, in the importing file's language.
+///
+/// `None` means the import names something outside the project — a package — and there is
+/// nothing to link it to. That is not an error.
+pub fn resolve_module(
+    importing: &Path,
+    source: &str,
+    level: u32,
+    known: &dyn Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    // Pre-resolved by the adapter; see `ImportFact::source`.
+    if let Some(absolute) = source.strip_prefix('/') {
+        return Some(PathBuf::from(absolute));
+    }
+
+    match crate::project::Language::of(importing)? {
+        crate::project::Language::Python => resolve_python_module(importing, source, level, known),
+        crate::project::Language::JavaScript | crate::project::Language::TypeScript => {
+            resolve_js_module(importing, source, known)
+        }
+    }
+}
+
+/// Extensions a JavaScript import may omit, in the order Node and TypeScript try them.
+const JS_EXTENSIONS: &[&str] = &["js", "ts", "jsx", "tsx", "mjs", "cjs", "mts", "cts"];
+
+/// Resolve a JavaScript or TypeScript import specifier to a file in the project.
+///
+/// Relative specifiers (`./users`, `../routes/users.js`) are resolved the way Node does:
+/// the exact file, then with each extension, then `<dir>/index.<ext>`. A `.js` extension
+/// is also tried as `.ts`, since that is how TypeScript ESM output is written. The `@/` and
+/// `~/` aliases are tried from `src/` and the project root, which covers the common
+/// `tsconfig` setup without reading it. Bare specifiers name packages and never resolve.
+pub fn resolve_js_module(
+    importing: &Path,
+    source: &str,
+    known: &dyn Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let bases: Vec<PathBuf> = if source.starts_with("./") || source.starts_with("../") {
+        vec![normalize(&importing.parent()?.join(source))]
+    } else {
+        let rest = source
+            .strip_prefix("@/")
+            .or_else(|| source.strip_prefix("~/"))?;
+        vec![
+            normalize(&Path::new("src").join(rest)),
+            normalize(Path::new(rest)),
+        ]
+    };
+
+    for base in bases {
+        if known(&base) {
+            return Some(base);
+        }
+        // `./users.js` written against a `users.ts` source file.
+        if let Some(extension) = base.extension().and_then(|e| e.to_str()) {
+            let swapped = match extension {
+                "js" => Some("ts"),
+                "mjs" => Some("mts"),
+                "cjs" => Some("cts"),
+                "jsx" => Some("tsx"),
+                _ => None,
+            };
+            if let Some(swapped) = swapped {
+                let candidate = base.with_extension(swapped);
+                if known(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+        for extension in JS_EXTENSIONS {
+            // Not `with_extension`: that would replace the `.route` in `users.route`.
+            let candidate = PathBuf::from(format!("{}.{extension}", base.display()));
+            if known(&candidate) {
+                return Some(candidate);
+            }
+        }
+        for extension in JS_EXTENSIONS {
+            let candidate = base.join(format!("index.{extension}"));
+            if known(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+/// Collapse `.` and `..` components without touching the filesystem.
+fn normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Resolve a Python-style module specification to a file in the project.
@@ -283,6 +435,15 @@ mod tests {
     }
 
     #[test]
+    fn an_inline_require_is_one_reference_despite_its_dots() {
+        let inline = SymbolRef::new("app.js", "require(\"./routes/users.js\")");
+        assert_eq!(inline.split(), (None, "require(\"./routes/users.js\")"));
+
+        let member = SymbolRef::new("app.js", "require(\"./routes\").users");
+        assert_eq!(member.split(), (Some("require(\"./routes\")"), "users"));
+    }
+
+    #[test]
     fn a_deeply_dotted_reference_keeps_the_whole_qualifier() {
         let deep = SymbolRef::new("main.py", "api.v1.users.router");
         assert_eq!(deep.split(), (Some("api.v1.users"), "router"));
@@ -341,6 +502,88 @@ mod tests {
         assert_eq!(
             resolve_python_module(Path::new("app/main.py"), "fastapi", 0, &known),
             None
+        );
+    }
+
+    #[test]
+    fn a_relative_js_import_tries_extensions_and_index_files() {
+        let known = known_files(&["src/routes/users.ts", "src/routes/orders/index.js"]);
+        let from = Path::new("src/app.ts");
+
+        assert_eq!(
+            resolve_js_module(from, "./routes/users", &known),
+            Some(PathBuf::from("src/routes/users.ts"))
+        );
+        assert_eq!(
+            resolve_js_module(from, "./routes/orders", &known),
+            Some(PathBuf::from("src/routes/orders/index.js"))
+        );
+    }
+
+    #[test]
+    fn a_js_extension_finds_the_typescript_source_it_compiles_from() {
+        let known = known_files(&["src/routes/users.ts"]);
+        assert_eq!(
+            resolve_js_module(Path::new("src/app.ts"), "./routes/users.js", &known),
+            Some(PathBuf::from("src/routes/users.ts"))
+        );
+    }
+
+    #[test]
+    fn parent_directory_imports_climb() {
+        let known = known_files(&["src/lib/router.js"]);
+        assert_eq!(
+            resolve_js_module(Path::new("src/routes/users.js"), "../lib/router", &known),
+            Some(PathBuf::from("src/lib/router.js"))
+        );
+    }
+
+    #[test]
+    fn the_at_alias_is_tried_from_src_and_the_root() {
+        let known = known_files(&["src/routes/users.ts"]);
+        assert_eq!(
+            resolve_js_module(Path::new("src/app.ts"), "@/routes/users", &known),
+            Some(PathBuf::from("src/routes/users.ts"))
+        );
+    }
+
+    #[test]
+    fn a_bare_specifier_is_a_package_and_does_not_resolve() {
+        let known = known_files(&["node_modules/express/index.js", "express.js"]);
+        assert_eq!(
+            resolve_js_module(Path::new("app.js"), "express", &known),
+            None
+        );
+    }
+
+    #[test]
+    fn a_dotted_file_name_is_not_treated_as_an_extension() {
+        let known = known_files(&["src/users.route.js"]);
+        assert_eq!(
+            resolve_js_module(Path::new("src/app.js"), "./users.route", &known),
+            Some(PathBuf::from("src/users.route.js"))
+        );
+    }
+
+    #[test]
+    fn resolution_dispatches_on_the_importing_language() {
+        let known = known_files(&["app/api/users.py", "src/routes/users.js"]);
+        assert_eq!(
+            resolve_module(Path::new("app/main.py"), "api.users", 1, &known),
+            Some(PathBuf::from("app/api/users.py"))
+        );
+        assert_eq!(
+            resolve_module(Path::new("src/app.js"), "./routes/users", 0, &known),
+            Some(PathBuf::from("src/routes/users.js"))
+        );
+    }
+
+    #[test]
+    fn a_pre_resolved_source_is_taken_as_given() {
+        let known = known_files(&[]);
+        assert_eq!(
+            resolve_module(Path::new("app/api/x/route.ts"), "/app", 0, &known),
+            Some(PathBuf::from("app"))
         );
     }
 

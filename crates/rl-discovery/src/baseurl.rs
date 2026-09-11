@@ -19,10 +19,23 @@ pub struct BaseUrlCandidate {
     pub confidence: u8,
 }
 
-const DEFAULT_PORT: u16 = 8000;
+/// What a framework serves on when nothing says otherwise.
+fn default_port(framework: &str) -> Option<(u16, &'static str)> {
+    match framework {
+        "fastapi" => Some((8000, "uvicorn default")),
+        "flask" => Some((5000, "Flask default")),
+        "django" => Some((8000, "Django default")),
+        "nextjs" => Some((3000, "Next.js default")),
+        "express" => Some((3000, "the usual Express choice")),
+        _ => None,
+    }
+}
 
 /// Collect base URL candidates, best first.
-pub fn infer(project: &ProjectContext) -> Vec<BaseUrlCandidate> {
+///
+/// `frameworks` are the detected framework ids, best first, and decide which default port
+/// is offered when the project says nothing about how it runs.
+pub fn infer(project: &ProjectContext, frameworks: &[&str]) -> Vec<BaseUrlCandidate> {
     let mut found: Vec<BaseUrlCandidate> = Vec::new();
 
     let mut add = |port: u16, source: String, confidence: u8| {
@@ -75,29 +88,62 @@ pub fn infer(project: &ProjectContext) -> Vec<BaseUrlCandidate> {
         }
     }
 
-    // Always offer the framework default, so there is something to click even in a project
-    // that says nothing about how it runs.
-    add(DEFAULT_PORT, "FastAPI default".to_string(), 1);
+    // Always offer a default, so there is something to click even in a project that says
+    // nothing about how it runs.
+    let mut offered_default = false;
+    for framework in frameworks {
+        if let Some((port, why)) = default_port(framework) {
+            add(port, why.to_string(), 1);
+            offered_default = true;
+        }
+    }
+    if !offered_default {
+        add(8000, "a common default".to_string(), 1);
+    }
 
     found.sort_by_key(|c| std::cmp::Reverse(c.confidence));
     found
 }
 
-/// Ports named by `--port N`, `-p N`, or `host:port` in a serving command.
+/// Ports named by `--port N`, `-p N`, `PORT=N`, or `host:port` in a serving command.
 fn ports_from_run_commands(text: &str) -> Vec<u16> {
     let mut ports = Vec::new();
 
     for line in text.lines() {
         let lowered = line.to_ascii_lowercase();
-        let is_run_command = ["uvicorn", "gunicorn", "hypercorn", "flask run", "daphne"]
-            .iter()
-            .any(|needle| lowered.contains(needle));
+        let is_run_command = [
+            "uvicorn",
+            "gunicorn",
+            "hypercorn",
+            "flask run",
+            "daphne",
+            "next dev",
+            "next start",
+            "node ",
+            "nodemon",
+            "ts-node",
+            "tsx ",
+        ]
+        .iter()
+        .any(|needle| lowered.contains(needle));
         if !is_run_command {
             continue;
         }
 
-        let tokens: Vec<&str> = line.split_whitespace().collect();
+        // Quotes are stripped because a package.json script is one JSON string, and its
+        // first token arrives as `"PORT=4000`.
+        let tokens: Vec<&str> = line
+            .split_whitespace()
+            .map(|t| t.trim_matches(['"', '\'']))
+            .collect();
         for (index, token) in tokens.iter().enumerate() {
+            // `PORT=4000 node src/server.js`
+            if let Some(value) = token.strip_prefix("PORT=") {
+                if let Ok(port) = value.trim_matches(|c: char| !c.is_ascii_digit()).parse() {
+                    ports.push(port);
+                }
+            }
+
             // `--port 8080` and `--port=8080`
             if let Some(value) = token.strip_prefix("--port=").or_else(|| {
                 (*token == "--port" || *token == "-p")
@@ -197,7 +243,7 @@ mod tests {
             "Procfile",
             "web: uvicorn app.main:app --host 0.0.0.0 --port 9001\n",
         )]);
-        let candidates = infer(&project);
+        let candidates = infer(&project, &["fastapi"]);
 
         assert_eq!(candidates[0].url, "http://localhost:9001");
         assert!(candidates[0].source.contains("Procfile"));
@@ -206,10 +252,10 @@ mod tests {
     #[test]
     fn handles_the_equals_form_and_gunicorn_bind() {
         let (_dir, equals) = project(&[("Makefile", "run:\n\tuvicorn main:app --port=7000\n")]);
-        assert_eq!(infer(&equals)[0].url, "http://localhost:7000");
+        assert_eq!(infer(&equals, &["fastapi"])[0].url, "http://localhost:7000");
 
         let (_dir, bind) = project(&[("Procfile", "web: gunicorn app:app --bind 0.0.0.0:5050\n")]);
-        assert_eq!(infer(&bind)[0].url, "http://localhost:5050");
+        assert_eq!(infer(&bind, &["fastapi"])[0].url, "http://localhost:5050");
     }
 
     #[test]
@@ -218,25 +264,25 @@ mod tests {
             "docker-compose.yml",
             "services:\n  api:\n    ports:\n      - \"8080:8000\"\n",
         )]);
-        assert!(urls(&infer(&project)).contains(&"http://localhost:8080"));
+        assert!(urls(&infer(&project, &["fastapi"])).contains(&"http://localhost:8080"));
     }
 
     #[test]
     fn env_port_is_read() {
         let (_dir, project) = project(&[(".env", "# comment\nPORT=3333\nOTHER=x\n")]);
-        assert!(urls(&infer(&project)).contains(&"http://localhost:3333"));
+        assert!(urls(&infer(&project, &["fastapi"])).contains(&"http://localhost:3333"));
     }
 
     #[test]
     fn a_commented_out_port_is_not_used() {
         let (_dir, project) = project(&[(".env", "#PORT=9999\n")]);
-        assert!(!urls(&infer(&project)).contains(&"http://localhost:9999"));
+        assert!(!urls(&infer(&project, &["fastapi"])).contains(&"http://localhost:9999"));
     }
 
     #[test]
     fn dockerfile_expose_is_a_weak_candidate() {
         let (_dir, project) = project(&[("Dockerfile", "FROM python\nEXPOSE 8000/tcp\n")]);
-        let candidates = infer(&project);
+        let candidates = infer(&project, &["fastapi"]);
         let exposed = candidates
             .iter()
             .find(|c| c.source.contains("EXPOSE"))
@@ -247,9 +293,34 @@ mod tests {
     #[test]
     fn there_is_always_a_default_to_click() {
         let (_dir, project) = project(&[("README.md", "nothing useful here")]);
-        let candidates = infer(&project);
+        let candidates = infer(&project, &[]);
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].url, "http://localhost:8000");
+    }
+
+    #[test]
+    fn the_default_follows_the_detected_framework() {
+        let (_dir, project) = project(&[("README.md", "")]);
+        assert_eq!(
+            urls(&infer(&project, &["nextjs"])),
+            vec!["http://localhost:3000"]
+        );
+        assert_eq!(
+            urls(&infer(&project, &["fastapi"])),
+            vec!["http://localhost:8000"]
+        );
+    }
+
+    #[test]
+    fn next_and_node_run_scripts_are_read() {
+        let (_dir, project) = project(&[(
+            "package.json",
+            "{ \"scripts\": { \"dev\": \"next dev -p 3100\", \"start\": \"PORT=4000 node server.js\" } }",
+        )]);
+        let candidates = infer(&project, &["nextjs"]);
+        let urls = urls(&candidates);
+        assert!(urls.contains(&"http://localhost:3100"));
+        assert!(urls.contains(&"http://localhost:4000"));
     }
 
     #[test]
@@ -258,7 +329,7 @@ mod tests {
             ("Procfile", "web: uvicorn main:app --port 8000\n"),
             ("Dockerfile", "EXPOSE 8000\n"),
         ]);
-        let candidates = infer(&project);
+        let candidates = infer(&project, &["fastapi"]);
 
         assert_eq!(
             candidates

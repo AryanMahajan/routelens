@@ -1,94 +1,151 @@
 # Framework support
 
 Support matrix, honest about gaps. "Planned" means designed and scheduled, not implemented.
+Every implemented adapter is pinned by a fixture project under `tests/fixtures/<framework>/`
+whose snapshot records what is found **and what is expected not to be**.
 
 | Framework | Language | Phase | Status |
 |---|---|---|---|
-| FastAPI | Python | P3 | Planned |
-| Next.js | TS/JS | P4 | Planned |
-| Express | JS/TS | P4 | Planned |
+| FastAPI | Python | P3 | Implemented |
+| Next.js | TS/JS | P4 | Implemented |
+| Express | JS/TS | P4 | Implemented |
 | Flask | Python | P5 | Planned |
 | Django / DRF | Python | P6 | Planned |
+
+Every adapter shares the same limits, which come from static analysis itself rather than
+from any one framework:
+
+- **Nothing is executed.** A prefix read from an environment variable or a settings object
+  is shown as an unresolved gap (`/?/items`), never guessed.
+- **Routers built inside functions** are found, but the mount that would place them is
+  not: they appear as orphans with a warning naming the call that builds them.
+- **Handlers are inspected only within the file that registers them.** A controller
+  defined elsewhere contributes no parameters.
+- **Auth is a name-based heuristic.** A middleware or dependency whose name says `auth`,
+  `jwt`, `token`, `protect`, `guard`… is taken as a requirement and reported as
+  `Unknown` with that name, so the UI can show what was seen rather than a confident
+  claim. It misfires both ways.
 
 ---
 
 ## FastAPI
 
-**Detected by** `fastapi` in `pyproject.toml` / `requirements.txt`, plus `from fastapi import`.
+**Detected by** `fastapi` in a manifest (weak), plus `from fastapi import` in source
+(strong).
 
 **Recognised**
 
-- `@app.get/post/put/patch/delete/head/options(...)`
-- `@router.<method>(...)` on `APIRouter` instances
-- `APIRouter(prefix=..., tags=...)`
-- `app.include_router(router, prefix=..., tags=...)`, including nested inclusion
-- `app.add_api_route(...)` and `router.add_api_route(...)`
-- Path parameters with type hints and converters, e.g. `{user_id:int}`
-- Query parameters via `Query(...)` and defaulted handler arguments
-- Request bodies from Pydantic models and `Body(...)`
-- `response_model` for response schema
-- `Depends(...)` on security utilities as an authentication signal
-- `tags` used as the tree grouping
+- `app = FastAPI()` and `router = APIRouter(prefix=..., tags=[...])`
+- `@app.<method>(...)` and `@router.<method>(...)` for every HTTP method
+- `app.include_router(router, prefix=..., tags=..., dependencies=[...])`, nested to any
+  depth, across files, through relative and absolute imports — including submodule
+  imports (`from .api import admin` then `admin.router`) and re-exports
+- The same router mounted at two prefixes yields both paths
+- `add_api_route(...)` and `add_route(...)`
+- Path parameters with converters, e.g. `{user_id:int}`, `{path:path}`
+- Query parameters from defaulted handler arguments and `Query(...)`; headers from
+  `Header(...)`
+- Request bodies from Pydantic-looking annotations and `Body(...)`
+- `Depends(...)` / `Security(...)` on security-looking names as an auth signal, on a route
+  or on an `include_router`
+- `summary`, `description`, docstrings, `deprecated`, `tags` as the grouping
 
 **Gaps**
 
-- Routers built by factory functions or in loops
-- Prefixes read from settings objects, which are shown unresolved
-- Complex Pydantic generics and discriminated unions reduce to partial schemas
+- Prefixes read from settings objects: shown unresolved
+- Routers built by factory functions: found as orphans, with a warning
+- Pydantic model *contents* are not reconstructed — the body is known to be JSON of that
+  model, not its fields
 - Custom `APIRoute` subclasses that rewrite paths
 
-**Runtime enrich available** — `app.openapi()` supersedes every schema gap above.
+**Runtime enrich planned (P5)** — `app.openapi()` will supersede every schema gap above.
 
 ---
 
 ## Next.js
 
-**Detected by** `next` in `package.json`, or a `next.config.*` file.
+**Detected by** `next` in `package.json`, a `next.config.*` file, and — the strongest
+signal — route files where Next's conventions put them.
 
-The cheapest adapter, because paths come from the filesystem rather than from code.
+The cheapest adapter, because the path *is* the file system. The syntax tree is only
+consulted for which methods a file handles.
 
 **Recognised**
 
-- App Router: `app/api/**/route.ts` (also `.js`, `.tsx`)
-- Dynamic segments `[id]`, catch-all `[...slug]`, optional catch-all `[[...slug]]`
-- Route groups `(group)` — present in the tree, absent from the URL
-- Exported method handlers: `export async function GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS`
-- Legacy Pages Router: `pages/api/**` with a default-exported handler
-- `basePath` from `next.config.*` where statically resolvable
-- Route handler response types as a weak response-schema signal
+- App Router: `app/**/route.{ts,js,tsx,jsx,mjs}`, also under `src/app/` and in monorepo
+  sub-apps (`apps/web/app/`)
+- Dynamic `[id]`, catch-all `[...slug]`, optional catch-all `[[...slug]]`
+- Route groups `(group)`, parallel slots `@slot` and intercept markers `(.)`, all absent
+  from the URL; private folders `_name`, which are not routes at all
+- Method handlers in every export spelling: `export async function GET`, `export const
+  POST = …`, `export { handler as DELETE }`, `export const { PUT } = …`, re-exports
+- What a handler reads: `searchParams.get("q")` → query, `request.headers.get(…)` →
+  header, `request.json()` / `formData()` / `text()` → body type
+- Pages Router: `pages/api/**` with a default export, `index` files, dynamic file names,
+  underscore-prefixed files skipped
+- The Pages handler's accepted methods from `req.method === "POST"`, `!==` guards,
+  `switch (req.method)` and `["GET","POST"].includes(req.method)`; a handler that never
+  checks is listed under GET/POST/PUT/PATCH/DELETE with a summary saying why
+- `req.query` / `req.body` / `req.headers` usage in Pages handlers, with dynamic-segment
+  names correctly excluded from the query list
+- `export default withAuth(handler)`: the wrapped handler is followed, and the wrapper's
+  name is an auth hint
+- Port from `next dev -p N` in `package.json`, else 3000
 
 **Gaps**
 
-- Legacy handlers branch on `req.method` at runtime. The method set is inferred where the
-  branching is a simple `switch` or `if` chain, and left as "any method" otherwise
-- Middleware rewrites, and `rewrites`/`redirects` in `next.config`
-- Request body schemas, unless zod or an annotated type is used
+- `basePath` and `rewrites` in `next.config.*` are not applied
+- Body *shapes* are not reconstructed, even from zod
+- Edge `middleware.ts` is not modelled — it is not an endpoint, and its `matcher` is not
+  used to annotate routes
 
 ---
 
 ## Express
 
-**Detected by** `express` in `package.json`, plus an `express` require or import.
+**Detected by** `express` in `package.json` (weak), plus an `express` require or import
+(strong).
 
-Structurally the hardest adapter — the module graph is load-bearing.
+Structurally the hardest adapter — the module graph is load-bearing, and it is the same
+graph FastAPI uses. Express adds CommonJS/ESM export resolution on top.
 
 **Recognised**
 
-- `app.<method>(path, ...handlers)` and `router.<method>(...)`
-- `express.Router()` instances assigned to variables and exported
-- `app.use(path, router)` mounting, including inline require-mounts
-- `app.route(path).get(...).post(...)` chains
-- Nested router mounting to arbitrary depth
-- CommonJS and ESM module linking
-- Path parameters `:id`, optional `:id?`, and wildcards
-- Auth middleware in a handler chain as an authentication signal
+- `const app = express()`; `express.Router()`, `Router()`, `new Router()`, with or without
+  options
+- `app.<method>(path, ...handlers)` and `router.<method>(...)`; `.all` listed under
+  GET/POST/PUT/PATCH/DELETE with a summary saying why
+- `app.route(path).get(a).post(b)` chains, and `app.get(...).post(...)` chains
+- Arrays of paths: `app.get(["/a", "/b"], h)`
+- `app.use(prefix, router)`, `app.use(router)`, `app.use(prefix, require("./routes"))`,
+  arrays of routers, the same router mounted twice, nesting to any depth
+- Module linking in both systems: `require`, destructured `require`,
+  `require("./m").name`, `import x from`, `import { a as b }`, `import * as`; exports via
+  `module.exports = x`, `module.exports = { a, b: c }`, `exports.a = …`, `export default`,
+  `export const`, `export { a as b }`, and `export … from` re-exports; `@/` and `~/`
+  aliases tried from `src/` and the root
+- Path constants folded from literals, template strings and `+`
+- Path parameters `:id`, optional `:id?`, wildcard `*`
+- What a handler reads off `req`: `req.query.x` and `const { x } = req.query` → query,
+  `req.body.x` → body fields (offered as an example body), `req.headers["x"]` and
+  `req.get("X")` → headers, with `Authorization` promoted to an auth requirement
+- Auth middleware in a handler chain, ahead of a mounted router (`app.use("/admin",
+  requireAuth, adminRouter)` guards everything under it), or applied router-wide with
+  `router.use(requireAuth)`
+- Package middleware (`cors()`, `helmet`, `express.json()`) recognised as not-a-router
+  and ignored quietly
+- Port from `PORT=` in `.env*`, `-p`/`--port`/`PORT=` in run scripts, else 3000
 
 **Gaps**
 
-- Routers assembled dynamically, or re-exported through barrel files with renaming
-- Paths built by string concatenation with runtime values, which are shown unresolved
-- Regex route paths — recorded, but not turned into a fillable template
-- Request schemas, unless zod, joi, or TypeScript types are used recognisably
+- A router built by a call (`app.use("/api", createRouter())`) cannot be followed:
+  the mount is reported with a warning, and the routes inside the factory appear as
+  orphans
+- `this.router` in class-based controllers: reported, not guessed
+- Regex paths and `process.env` prefixes: shown unresolved
+- Handlers in other files (`users.list` from a controllers module) contribute no
+  parameters
+- Request schemas from zod, joi or TypeScript types are not read
 
 ---
 

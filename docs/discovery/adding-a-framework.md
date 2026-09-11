@@ -34,7 +34,7 @@ pub trait FrameworkAdapter {
     fn candidate_files(&self, project: &ProjectContext) -> Vec<PathBuf>;
 
     /// Emit facts from one parsed file. The core does the rest.
-    fn extract(&self, file: &ParsedFile, sink: &mut FactSink) -> Result<()>;
+    fn extract(&self, file: &ParsedFile, sink: &mut FactSink);
 }
 ```
 
@@ -52,37 +52,65 @@ is the main lever on scan speed.
 
 ### `extract`
 
-Walk the parsed tree — normally with tree-sitter queries — and push facts into the sink:
+Walk the parsed tree and push facts into the sink. Three facts describe routing; two more
+let the graph link them across files.
 
 ```rust
 sink.router(RouterFact {
-    symbol,                  // the variable the router is bound to
+    symbol,                  // SymbolId: (module, variable name)
     prefix,                  // PathTemplate, possibly containing Unresolved
     group,                   // tags / name, used for tree grouping
+    is_app_root,             // true for `app = FastAPI()`, `app = express()`
     span,
 });
 
 sink.route(RouteFact {
-    router: symbol,          // which router this attaches to
+    router,                  // SymbolRef: the name as written, e.g. `users.router`
     methods,                 // one or more
     path,                    // PathTemplate relative to its router
-    params, body, auth,      // best-effort; None is always acceptable
+    query_params, headers,
+    body, auth,              // best-effort; None is always acceptable
     span,                    // becomes SourceLocation
+    ..
 });
 
 sink.mount(MountFact {
-    parent,                  // router being mounted onto
-    child,                   // router being mounted
+    parent, child,           // SymbolRefs, as written at the mount site
     prefix,
+    group,
+    auth,                    // a guard on the mount, inherited by every route beneath
     span,
 });
 
-sink.app_root(symbol);       // where path resolution starts
+sink.import(ImportFact {     // how `child` above might be traced to another file
+    module, local_name,
+    source,                  // in the language's own convention
+    original,                // the name in the source module; `default` for JS defaults
+    level,                   // Python relative-import dots
+});
+
+sink.export(ExportFact {     // JavaScript only: `module.exports = router`
+    module, exported, local,
+});
 ```
 
-Frameworks without routers — Next.js, whose paths come from the filesystem — simply emit
-`route` facts against a single synthetic app root. The graph is then flat, and the resolver
-handles that case without special-casing.
+A `SymbolRef` is deliberately *unresolved*: `include_router(router)` might name a local
+variable or an import, and only the graph — which sees every file's imports and exports —
+knows which. The graph follows re-exports, submodule imports and CommonJS defaults; the
+adapter just reports what was written.
+
+Frameworks without routers — Next.js, whose paths come from the filesystem — emit `route`
+facts against one virtual app root per app, attached with an `ImportFact` whose `source`
+starts with `/` (project-root-relative, already resolved). The graph is then flat, and the
+resolver handles that case without special-casing.
+
+### Shared helpers
+
+Recognition code that is about the *language* rather than the framework lives in
+`adapters/python.rs` and `adapters/js.rs`: constant folding, call arguments, import and
+export collection, and — for JavaScript — what a handler reads off its request object.
+A Flask adapter reuses everything the FastAPI one does; a Koa or Fastify adapter would
+reuse everything Express does.
 
 ### Emitting unknowns
 
@@ -96,9 +124,11 @@ confidently wrong path is worse than no path at all.
 
 2. **Create `crates/rl-discovery/src/adapters/<name>.rs`** and implement the trait.
 
-3. **Write the queries.** Keep route-recognition patterns as tree-sitter queries in the
-   adapter module rather than hand-written visitor code, so the patterns stay readable and
-   reviewable.
+3. **Write the recognisers.** The existing adapters walk the tree with `index::walk` and
+   match on a handful of node kinds; keep each recogniser small and named after the
+   syntax it recognises (`extract_decorated`, `mount`, `method_exports`). Dump a sample
+   file's tree with `cargo run -p rl-discovery --example sexp -- file.ts` to see the node
+   kinds before writing one.
 
 4. **Add a fixture project** under `tests/fixtures/<name>/`. A realistic small app, not a toy:
    routes split across files, at least one nested mount, at least one prefix constant.

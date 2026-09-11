@@ -72,9 +72,9 @@ higher-fidelity result when you ask for it.
 
 | Framework | Language | Status | Notes |
 |---|---|---|---|
-| FastAPI  | Python | Planned — P3 | Routers, prefixes, Pydantic schemas; runtime enrich available |
-| Next.js  | TS/JS  | Planned — P4 | App Router + legacy `pages/api` |
-| Express  | JS/TS  | Planned — P4 | Router mounting across modules |
+| FastAPI  | Python | Implemented | Routers, prefixes, signatures; runtime enrich planned |
+| Next.js  | TS/JS  | Implemented | App Router + legacy `pages/api` |
+| Express  | JS/TS  | Implemented | Router mounting across CommonJS and ESM modules |
 | Flask    | Python | Planned — P5 | Blueprints; runtime enrich available |
 | Django   | Python | Planned — P6 | `urlpatterns`, `include()`, DRF routers |
 

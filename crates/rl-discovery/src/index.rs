@@ -39,6 +39,11 @@ impl ParsedFile {
         crate::facts::Span::new(start.row as u32 + 1, start.column as u32 + 1)
     }
 
+    /// The path as text, forward slashes on every platform.
+    pub fn display_path(&self) -> String {
+        crate::project::display(&self.path)
+    }
+
     /// Whether the parse hit a syntax error anywhere.
     ///
     /// Not a reason to discard the file — tree-sitter recovers, and the routes around the
@@ -58,22 +63,37 @@ impl std::fmt::Debug for ParsedFile {
     }
 }
 
-/// Parses files, reusing one parser per language.
+/// Parses files, reusing one parser per grammar.
 pub struct SourceIndex {
     python: Parser,
+    javascript: Parser,
+    typescript: Parser,
+    /// TSX is a separate grammar: `<T>` is a type assertion in `.ts` and a tag in `.tsx`.
+    tsx: Parser,
+}
+
+fn parser(language: &tree_sitter::Language, name: &'static str) -> Result<Parser> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(language)
+        .map_err(|source| DiscoveryError::Grammar {
+            language: name,
+            source,
+        })?;
+    Ok(parser)
 }
 
 impl SourceIndex {
     pub fn new() -> Result<SourceIndex> {
-        let mut python = Parser::new();
-        python
-            .set_language(&tree_sitter_python::LANGUAGE.into())
-            .map_err(|source| DiscoveryError::Grammar {
-                language: "python",
-                source,
-            })?;
-
-        Ok(SourceIndex { python })
+        Ok(SourceIndex {
+            python: parser(&tree_sitter_python::LANGUAGE.into(), "python")?,
+            javascript: parser(&tree_sitter_javascript::LANGUAGE.into(), "javascript")?,
+            typescript: parser(
+                &tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                "typescript",
+            )?,
+            tsx: parser(&tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx")?,
+        })
     }
 
     pub fn parse(
@@ -82,15 +102,22 @@ impl SourceIndex {
         language: Language,
         source: String,
     ) -> Option<ParsedFile> {
+        let path = path.into();
+        let is_tsx = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("tsx"));
+
         let parser = match language {
             Language::Python => &mut self.python,
-            // JavaScript and TypeScript arrive with the Next.js and Express adapters in P4.
-            _ => return None,
+            Language::JavaScript => &mut self.javascript,
+            Language::TypeScript if is_tsx => &mut self.tsx,
+            Language::TypeScript => &mut self.typescript,
         };
 
         let tree = parser.parse(&source, None)?;
         Some(ParsedFile {
-            path: path.into(),
+            path,
             language,
             source,
             tree,
@@ -174,11 +201,37 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_languages_are_declined_rather_than_guessed_at() {
+    fn parses_javascript_and_typescript() {
         let mut index = SourceIndex::new().unwrap();
-        assert!(index
-            .parse("a.ts", Language::TypeScript, "const x = 1".into())
-            .is_none());
+
+        let js = index
+            .parse("a.js", Language::JavaScript, "const x = 1;".into())
+            .unwrap();
+        assert!(!js.has_errors());
+        assert_eq!(js.root().kind(), "program");
+
+        let ts = index
+            .parse("a.ts", Language::TypeScript, "const x: number = 1;".into())
+            .unwrap();
+        assert!(!ts.has_errors());
+    }
+
+    /// The reason TSX gets its own grammar: this is a type assertion in `.ts` and a JSX
+    /// element in `.tsx`, and a parser that only knows one will error on the other.
+    #[test]
+    fn tsx_files_use_the_tsx_grammar() {
+        let mut index = SourceIndex::new().unwrap();
+        let source = "export default function Page() { return <div>hi</div>; }".to_string();
+
+        let tsx = index
+            .parse("page.tsx", Language::TypeScript, source.clone())
+            .unwrap();
+        assert!(!tsx.has_errors());
+
+        let ts = index
+            .parse("page.ts", Language::TypeScript, source)
+            .unwrap();
+        assert!(ts.has_errors(), "JSX is not valid in a plain .ts file");
     }
 
     #[test]

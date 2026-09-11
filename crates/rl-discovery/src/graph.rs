@@ -12,13 +12,18 @@
 //! Composing those prefixes is written here, once, rather than in each adapter. That is what
 //! keeps adapters small enough to add cheaply.
 
-use crate::facts::{FactSink, ImportFact, MountFact, RouteFact, RouterFact, SymbolId, SymbolRef};
+use crate::facts::{
+    ExportFact, FactSink, ImportFact, MountFact, RouteFact, RouterFact, SymbolId, SymbolRef,
+};
 use rl_model::PathTemplate;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// Guards against a mount chain that never terminates.
 const MAX_DEPTH: usize = 32;
+
+/// Guards against an import that re-exports an import that re-exports an import.
+const MAX_ALIAS_HOPS: usize = 16;
 
 /// Something the graph could not do, worth telling the developer about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +47,7 @@ impl std::fmt::Display for GraphWarning {
             GraphWarning::UnresolvedReference { module, name } => write!(
                 f,
                 "could not trace `{name}` in {} to a router declaration",
-                module.display()
+                crate::project::display(module)
             ),
             GraphWarning::OrphanedRouter { symbol } => {
                 write!(
@@ -69,6 +74,8 @@ pub struct ResolvedRoute<'a> {
     pub fact: &'a RouteFact,
     /// Nearest group: the mount's, then the router's, then the route's own.
     pub group: Option<String>,
+    /// The route's own auth, or the nearest mount's.
+    pub auth: Option<rl_model::AuthRequirement>,
     /// Reached from no application root.
     pub orphaned: bool,
 }
@@ -88,6 +95,8 @@ pub struct RegistrationGraph {
     mounts: Vec<MountFact>,
     /// (module, local name) → what it refers to.
     import_bindings: BTreeMap<(PathBuf, String), Binding>,
+    /// (module, exported name) → local name.
+    exports: BTreeMap<(PathBuf, String), String>,
 }
 
 /// What an imported name points at.
@@ -112,12 +121,14 @@ impl RegistrationGraph {
         }
 
         let import_bindings = resolve_imports(&sink.imports, &known);
+        let exports = index_exports(&sink.exports);
 
         RegistrationGraph {
             routers,
             routes: sink.routes,
             mounts: sink.mounts,
             import_bindings,
+            exports,
         }
     }
 
@@ -134,10 +145,21 @@ impl RegistrationGraph {
             Some(qualifier) => {
                 let key = (reference.module.clone(), qualifier.to_string());
                 match self.import_bindings.get(&key) {
-                    Some(Binding::Module(module)) => Some(SymbolId::new(module.clone(), attribute)),
-                    // A qualifier bound to a *value* rather than a module — `from .models
-                    // import user` then `user.router`. Reading an attribute off a value
-                    // needs evaluation, so this is reported rather than guessed at.
+                    Some(Binding::Module(module)) => {
+                        Some(self.canonical(SymbolId::new(module.clone(), attribute)))
+                    }
+                    // `const routes = require("./routes")` then `routes.users`: the
+                    // qualifier is a module's default export, and in CommonJS that *is*
+                    // the module, so the attribute is one of its named exports.
+                    Some(Binding::Symbol(symbol)) if symbol.name == "default" => {
+                        let key = (symbol.module.clone(), attribute.to_string());
+                        self.exports.contains_key(&key).then(|| {
+                            self.canonical(SymbolId::new(symbol.module.clone(), attribute))
+                        })
+                    }
+                    // A qualifier bound to some other *value* — `from .models import user`
+                    // then `user.router`. Reading an attribute off a value needs
+                    // evaluation, so this is reported rather than guessed at.
                     Some(Binding::Symbol(_)) => None,
                     None => None,
                 }
@@ -152,7 +174,7 @@ impl RegistrationGraph {
                 // Imported by name?
                 let key = (reference.module.clone(), attribute.to_string());
                 match self.import_bindings.get(&key) {
-                    Some(Binding::Symbol(symbol)) => Some(symbol.clone()),
+                    Some(Binding::Symbol(symbol)) => Some(self.canonical(symbol.clone())),
                     Some(Binding::Module(_)) => None,
                     // Not declared and not imported. Still return the local id: an app root
                     // such as `app = FastAPI()` is a symbol we know about even when no
@@ -161,6 +183,35 @@ impl RegistrationGraph {
                 }
             }
         }
+    }
+
+    /// Follow exports and re-exports until a declared router — or a dead end.
+    ///
+    /// `require("./routes/users")` binds `default`; `module.exports = router` says `default`
+    /// is `router`; and `router` may itself be an import from a third file. Each hop is one
+    /// lookup, and the chain is bounded so a circular re-export cannot spin.
+    fn canonical(&self, mut symbol: SymbolId) -> SymbolId {
+        for _ in 0..MAX_ALIAS_HOPS {
+            if self.routers.contains_key(&symbol) {
+                return symbol;
+            }
+
+            let key = (symbol.module.clone(), symbol.name.clone());
+            if let Some(local) = self.exports.get(&key) {
+                if *local != symbol.name {
+                    symbol = SymbolId::new(symbol.module, local.clone());
+                    continue;
+                }
+            }
+
+            match self.import_bindings.get(&key) {
+                Some(Binding::Symbol(target)) => symbol = target.clone(),
+                // `import * as routes` re-exported: treat as the module's default.
+                Some(Binding::Module(module)) => symbol = SymbolId::new(module.clone(), "default"),
+                None => return symbol,
+            }
+        }
+        symbol
     }
 
     /// Compose every route's full path.
@@ -214,6 +265,7 @@ impl RegistrationGraph {
                 root,
                 &PathTemplate::empty(),
                 None,
+                None,
                 &routes_by_router,
                 &mounts_by_parent,
                 &mut stack,
@@ -242,6 +294,7 @@ impl RegistrationGraph {
                 &symbol,
                 &PathTemplate::empty(),
                 None,
+                None,
                 &routes_by_router,
                 &mounts_by_parent,
                 &mut stack,
@@ -264,6 +317,7 @@ impl RegistrationGraph {
         symbol: &SymbolId,
         prefix: &PathTemplate,
         group: Option<&str>,
+        auth: Option<&rl_model::AuthRequirement>,
         routes_by_router: &BTreeMap<SymbolId, Vec<usize>>,
         mounts_by_parent: &BTreeMap<SymbolId, Vec<(SymbolId, &MountFact)>>,
         stack: &mut Vec<SymbolId>,
@@ -304,6 +358,7 @@ impl RegistrationGraph {
                     path: full.clone(),
                     fact,
                     group: fact.group.clone().or_else(|| group.map(str::to_string)),
+                    auth: fact.auth.clone().or_else(|| auth.cloned()),
                     orphaned,
                 });
             }
@@ -312,10 +367,14 @@ impl RegistrationGraph {
         for (child, mount) in mounts_by_parent.get(symbol).into_iter().flatten() {
             let mounted_at = base.join(&mount.prefix);
             let child_group = mount.group.as_deref().or(group);
+            // The nearest mount's auth wins, so a public sub-router under a guarded one
+            // still shows the guard it actually sits behind.
+            let child_auth = mount.auth.as_ref().or(auth);
             self.walk(
                 child,
                 &mounted_at,
                 child_group,
+                child_auth,
                 routes_by_router,
                 mounts_by_parent,
                 stack,
@@ -338,19 +397,19 @@ fn resolve_imports(
     let mut bindings = BTreeMap::new();
 
     for import in imports {
-        let Some(module) = crate::facts::resolve_python_module(
-            &import.module,
-            &import.source,
-            import.level,
-            known,
-        ) else {
+        let Some(module) =
+            crate::facts::resolve_module(&import.module, &import.source, import.level, known)
+        else {
             // An import of something outside the project — `fastapi` itself, say. Not an
             // error; there is simply nothing in the project to link it to.
             continue;
         };
 
+        let is_python =
+            crate::project::Language::of(&import.module) == Some(crate::project::Language::Python);
+
         let binding = match &import.original {
-            Some(name) => {
+            Some(name) if is_python => {
                 // `from .api import admin` looks like a symbol import but usually names a
                 // *submodule*, so `admin.router` means `api/admin.py`'s `router`. Try that
                 // first; fall back to a symbol when no such file exists.
@@ -369,6 +428,7 @@ fn resolve_imports(
                     None => Binding::Symbol(SymbolId::new(module, name)),
                 }
             }
+            Some(name) => Binding::Symbol(SymbolId::new(module, name)),
             None => Binding::Module(module),
         };
 
@@ -376,6 +436,13 @@ fn resolve_imports(
     }
 
     bindings
+}
+
+fn index_exports(exports: &[ExportFact]) -> BTreeMap<(PathBuf, String), String> {
+    exports
+        .iter()
+        .map(|e| ((e.module.clone(), e.exported.clone()), e.local.clone()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -427,8 +494,88 @@ mod tests {
             child: SymbolRef::new(module, child),
             prefix: path(prefix),
             group: None,
+            auth: None,
             span: Span::new(1, 1),
         }
+    }
+
+    /// A JavaScript-style import: the source is a relative specifier, resolved against
+    /// the importing module's directory.
+    fn import(module: &str, local: &str, source: &str, original: Option<&str>) -> ImportFact {
+        ImportFact {
+            module: PathBuf::from(module),
+            local_name: local.into(),
+            source: format!("./{source}"),
+            original: original.map(str::to_string),
+            level: 0,
+        }
+    }
+
+    #[test]
+    fn a_mount_with_auth_guards_everything_under_it() {
+        let mut sink = FactSink::new();
+        sink.router(app_root("app.js", "app"));
+        sink.router(router("admin.js", "router", "", None));
+        sink.router(router("reports.js", "router", "", None));
+        sink.route(route("admin.js", "router", HttpMethod::Get, "/stats"));
+        sink.route(route("reports.js", "router", HttpMethod::Get, "/daily"));
+        let mut own = route("admin.js", "router", HttpMethod::Post, "/rotate");
+        own.auth = Some(rl_model::AuthRequirement::Basic);
+        sink.route(own);
+
+        let mut guarded = mount("app.js", "app", "admin_router", "/admin");
+        guarded.auth = Some(rl_model::AuthRequirement::Unknown {
+            hint: "requireAuth".into(),
+        });
+        sink.mount(guarded);
+        sink.mount(mount("admin.js", "router", "reports_router", "/reports"));
+        // `const admin_router = require("./admin")` with `module.exports = router`.
+        sink.import(import("app.js", "admin_router", "admin", Some("default")));
+        sink.import(import(
+            "admin.js",
+            "reports_router",
+            "reports",
+            Some("default"),
+        ));
+        sink.export(ExportFact {
+            module: PathBuf::from("admin.js"),
+            exported: "default".into(),
+            local: "router".into(),
+        });
+        sink.export(ExportFact {
+            module: PathBuf::from("reports.js"),
+            exported: "default".into(),
+            local: "router".into(),
+        });
+
+        let graph = RegistrationGraph::build(sink, &files(&["app.js", "admin.js", "reports.js"]));
+        let resolution = graph.resolve();
+
+        let auth_of = |p: &str| {
+            resolution
+                .routes
+                .iter()
+                .find(|r| r.path.render(ParamStyle::Braces) == p)
+                .unwrap()
+                .auth
+                .clone()
+        };
+        assert!(matches!(
+            auth_of("/admin/stats"),
+            Some(rl_model::AuthRequirement::Unknown { hint }) if hint == "requireAuth"
+        ));
+        assert!(
+            matches!(
+                auth_of("/admin/reports/daily"),
+                Some(rl_model::AuthRequirement::Unknown { .. })
+            ),
+            "a nested mount inherits the guard"
+        );
+        assert_eq!(
+            auth_of("/admin/rotate"),
+            Some(rl_model::AuthRequirement::Basic),
+            "a route's own auth is not overridden by the mount's"
+        );
     }
 
     fn rendered(routes: &[ResolvedRoute<'_>]) -> Vec<String> {

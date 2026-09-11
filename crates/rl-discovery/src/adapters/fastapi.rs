@@ -74,7 +74,10 @@ impl FrameworkAdapter for FastApiAdapter {
         if !imported_in.is_empty() {
             detection.add(
                 3,
-                format!("fastapi is imported in {}", imported_in[0].display()),
+                format!(
+                    "fastapi is imported in {}",
+                    crate::project::display(&imported_in[0])
+                ),
             );
         }
 
@@ -117,7 +120,7 @@ impl FrameworkAdapter for FastApiAdapter {
         if file.has_errors() {
             sink.warn(format!(
                 "{} has syntax errors; routes around them may be missing",
-                file.path.display()
+                file.display_path()
             ));
         }
     }
@@ -187,11 +190,18 @@ fn extract_call(file: &ParsedFile, node: Node<'_>, constants: &Constants, sink: 
                 .keyword("tags")
                 .and_then(|n| first_list_string(file, n, constants));
 
+            // `include_router(r, dependencies=[Depends(get_current_user)])` guards the
+            // whole router.
+            let auth = args
+                .keyword("dependencies")
+                .and_then(|list| auth_from_dependencies(file, list));
+
             sink.mount(MountFact {
                 parent: SymbolRef::new(file.path.clone(), object),
                 child: SymbolRef::new(file.path.clone(), file.text(child)),
                 prefix,
                 group,
+                auth,
                 span: file.span(node),
             });
         }
@@ -621,8 +631,11 @@ fn auth_from_dependency_call(file: &ParsedFile, node: Node<'_>) -> Option<AuthRe
             location: rl_model::ApiKeyLocation::Header,
         });
     }
+    // `get_current_user`, `get_current_admin`, `require_role`, `logged_in_user`.
     if lowered.contains("auth")
-        || lowered.contains("current_user")
+        || lowered.contains("current_")
+        || lowered.contains("require_")
+        || lowered.contains("logged")
         || lowered.contains("token")
         || lowered.contains("security")
         || lowered.contains("permission")
@@ -707,6 +720,30 @@ mod tests {
             .unwrap();
         FastApiAdapter.extract(&parsed, &mut sink);
         sink.routes.into_iter().next().expect("no route found")
+    }
+
+    #[test]
+    fn include_router_dependencies_guard_the_mount() {
+        let mut index = SourceIndex::new().unwrap();
+        let mut sink = FactSink::new();
+        let parsed = index
+            .parse(
+                "main.py",
+                Language::Python,
+                "app.include_router(admin.router, prefix=\"/admin\", dependencies=[Depends(get_current_admin)])
+                 app.include_router(public.router, prefix=\"/public\")
+"
+                    .to_string(),
+            )
+            .unwrap();
+        FastApiAdapter.extract(&parsed, &mut sink);
+
+        assert_eq!(sink.mounts.len(), 2);
+        assert!(matches!(
+            sink.mounts[0].auth,
+            Some(AuthRequirement::Unknown { ref hint }) if hint.contains("get_current_admin")
+        ));
+        assert!(sink.mounts[1].auth.is_none());
     }
 
     #[test]

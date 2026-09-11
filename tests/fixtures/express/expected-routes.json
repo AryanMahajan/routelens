@@ -1,0 +1,175 @@
+{
+  "frameworks": [
+    "express"
+  ],
+  "base_url": "http://localhost:4000",
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}",
+      "group": "users",
+      "source": "src/routes/users.js:19",
+      "has_auth": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}/avatar",
+      "group": "users",
+      "source": "src/routes/users.js:24",
+      "has_auth": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/ping",
+      "source": "src/app.js:39"
+    },
+    {
+      "method": "GET",
+      "path": "/?/items",
+      "group": "items",
+      "source": "src/routes/items.js:6",
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/admin/stats",
+      "group": "admin",
+      "source": "src/routes/admin.js:5",
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders",
+      "group": "orders",
+      "source": "src/routes/orders/index.js:6",
+      "query": [
+        "status"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders/{orderId}",
+      "group": "orders",
+      "source": "src/routes/orders/index.js:11"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/orders/{orderId}/items",
+      "group": "items",
+      "source": "src/routes/orders/items.js:6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users",
+      "group": "users",
+      "source": "src/routes/users.js:7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/{id}",
+      "group": "users",
+      "source": "src/routes/users.js:14",
+      "headers": [
+        "X-Trace-Id"
+      ],
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "source": "src/app.js:21"
+    },
+    {
+      "method": "GET",
+      "path": "/internal/admin/stats",
+      "group": "admin",
+      "source": "src/routes/admin.js:5"
+    },
+    {
+      "method": "GET",
+      "path": "/legacy/report",
+      "group": "legacy",
+      "source": "src/routes/legacy.js:6",
+      "orphaned": true
+    },
+    {
+      "method": "GET",
+      "path": "/ping",
+      "source": "src/app.js:39"
+    },
+    {
+      "method": "GET",
+      "path": "/users",
+      "group": "v2",
+      "source": "src/routes/v2.js:6",
+      "orphaned": true
+    },
+    {
+      "method": "PATCH",
+      "path": "/ping",
+      "source": "src/app.js:39"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/reindex",
+      "group": "admin",
+      "source": "src/routes/admin.js:7",
+      "has_auth": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders/{orderId}/items",
+      "group": "items",
+      "source": "src/routes/orders/items.js:8",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users",
+      "group": "users",
+      "source": "src/routes/users.js:9",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/internal/admin/reindex",
+      "group": "admin",
+      "source": "src/routes/admin.js:7"
+    },
+    {
+      "method": "POST",
+      "path": "/ping",
+      "source": "src/app.js:39"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/users/{id}/avatar",
+      "group": "users",
+      "source": "src/routes/users.js:23",
+      "has_auth": true
+    },
+    {
+      "method": "PUT",
+      "path": "/ping",
+      "source": "src/app.js:39"
+    }
+  ],
+  "warnings": [
+    "`createV2Router()` is mounted at /api/v2 but comes from a call",
+    "src/routes/legacy.js:router` is never mounted"
+  ],
+  "expected_misses": [
+    {
+      "path": "/api/v2/users",
+      "reason": "the router is built inside createV2Router(); its /users route is found but shown as an orphan, because following the call means running it"
+    },
+    {
+      "path": "/from-a-test",
+      "reason": "test files are skipped entirely"
+    },
+    {
+      "path": "/api/v1/users?limit",
+      "reason": "GET /api/v1/users has query params limit and offset, but its handler lives in controllers/users.js and handlers are only inspected within the registering file"
+    }
+  ]
+}

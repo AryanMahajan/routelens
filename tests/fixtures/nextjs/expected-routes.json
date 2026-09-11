@@ -1,0 +1,172 @@
+{
+  "frameworks": [
+    "nextjs"
+  ],
+  "base_url": "http://localhost:3100",
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/echo",
+      "group": "echo",
+      "source": "pages/api/echo.js:2",
+      "query": [
+        "message"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/users/{id}",
+      "group": "users",
+      "source": "app/api/users/[id]/route.ts:21",
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs/{slug}",
+      "group": "docs",
+      "source": "app/api/docs/[...slug]/route.ts:2"
+    },
+    {
+      "method": "GET",
+      "path": "/api/echo",
+      "group": "echo",
+      "source": "pages/api/echo.js:2",
+      "query": [
+        "message"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "group": "health",
+      "source": "app/api/health/route.js:4"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legacy/{id}",
+      "group": "legacy",
+      "source": "pages/api/legacy/[id].ts:3",
+      "query": [
+        "expand"
+      ],
+      "has_body": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/me",
+      "group": "me",
+      "source": "pages/api/me.ts:9",
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/search/{terms}",
+      "group": "search",
+      "source": "app/api/search/[[...terms]]/route.ts:2",
+      "query": [
+        "page"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/stats",
+      "group": "stats",
+      "source": "app/api/(admin)/stats/route.ts:4"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users",
+      "group": "users",
+      "source": "app/api/users/route.ts:5",
+      "query": [
+        "limit",
+        "search"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/{id}",
+      "group": "users",
+      "source": "app/api/users/[id]/route.ts:6"
+    },
+    {
+      "method": "HEAD",
+      "path": "/api/health",
+      "group": "health",
+      "source": "app/api/health/route.js:4"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/echo",
+      "group": "echo",
+      "source": "pages/api/echo.js:2",
+      "query": [
+        "message"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/legacy/{id}",
+      "group": "legacy",
+      "source": "pages/api/legacy/[id].ts:3",
+      "query": [
+        "expand"
+      ],
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/echo",
+      "group": "echo",
+      "source": "pages/api/echo.js:2",
+      "query": [
+        "message"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/hello",
+      "group": "hello",
+      "source": "pages/api/hello.ts:4",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/users",
+      "group": "users",
+      "source": "app/api/users/route.ts:11",
+      "has_body": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/echo",
+      "group": "echo",
+      "source": "pages/api/echo.js:2",
+      "query": [
+        "message"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/upload",
+      "group": "upload",
+      "source": "app/api/upload/route.ts:1",
+      "has_body": true
+    }
+  ],
+  "warnings": [],
+  "expected_misses": [
+    {
+      "path": "/api/_internal",
+      "reason": "a folder starting with `_` is private; Next never routes to it"
+    },
+    {
+      "path": "/api/_helpers",
+      "reason": "an underscore-prefixed file under pages/api is not a route"
+    },
+    {
+      "path": "/dashboard",
+      "reason": "a page, not a route handler: it exports a component, not a method"
+    }
+  ]
+}

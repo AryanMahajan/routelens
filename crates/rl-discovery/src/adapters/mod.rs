@@ -4,13 +4,31 @@
 //! is all. In particular it does **not** resolve prefixes, read files, or fold constants —
 //! see `docs/discovery/adding-a-framework.md`.
 
+pub mod express;
 pub mod fastapi;
+pub mod js;
+pub mod nextjs;
 pub mod python;
 
 use crate::facts::FactSink;
 use crate::index::ParsedFile;
 use crate::project::{Language, ProjectContext};
+use rl_model::HttpMethod;
 use std::path::PathBuf;
+
+/// What a route registered without a method expands to.
+///
+/// Express's `.all` and a `pages/api` handler that never checks `req.method` accept any
+/// method. The model has no "any" — a request has to be sent with one — so these are
+/// listed, leaving out `HEAD`, `OPTIONS` and `TRACE` to keep the tree readable. The route's
+/// summary says why it appears five times.
+pub const UNSPECIFIED_METHODS: [HttpMethod; 5] = [
+    HttpMethod::Get,
+    HttpMethod::Post,
+    HttpMethod::Put,
+    HttpMethod::Patch,
+    HttpMethod::Delete,
+];
 
 /// How strongly a project looks like a given framework.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +83,11 @@ pub trait FrameworkAdapter {
 
 /// Every adapter this build knows about.
 pub fn all() -> Vec<Box<dyn FrameworkAdapter>> {
-    vec![Box::new(fastapi::FastApiAdapter)]
+    vec![
+        Box::new(fastapi::FastApiAdapter),
+        Box::new(nextjs::NextJsAdapter),
+        Box::new(express::ExpressAdapter),
+    ]
 }
 
 #[cfg(test)]

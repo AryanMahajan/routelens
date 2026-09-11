@@ -93,7 +93,8 @@ export function Explorer({
           <span className="tabular-nums">
             {scan.stats.endpoints_found} endpoint
             {scan.stats.endpoints_found === 1 ? "" : "s"}
-            {scan.frameworks[0] && ` · ${scan.frameworks[0].id}`}
+            {scan.frameworks.length > 0 &&
+              ` · ${scan.frameworks.map((f) => f.id).join(" + ")}`}
           </span>
           <button onClick={onScan} disabled={scanning} className="transition hover:text-ink">
             {scanning ? "Scanning…" : "Rescan"}

@@ -58,6 +58,14 @@ const MANIFESTS: &[&str] = &[
     ".env.local",
 ];
 
+/// A project-relative path as text, with forward slashes on every platform.
+///
+/// Warnings, evidence and snapshots all carry paths, and none of them should read
+/// differently on Windows.
+pub fn display(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {

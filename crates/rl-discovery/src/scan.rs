@@ -137,11 +137,16 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
     stats.endpoints_found = endpoints.len();
     stats.unresolved = endpoints.iter().filter(|e| !e.path.is_resolved()).count();
 
+    // Best-detected framework first, so its default port is the one offered first.
+    frameworks.sort_by_key(|f| std::cmp::Reverse(f.score));
+    let framework_ids: Vec<&str> = frameworks.iter().map(|f| f.id.as_str()).collect();
+    let base_urls = baseurl::infer(project, &framework_ids);
+
     Ok(ScanResult {
         root: project.root().to_path_buf(),
         frameworks,
         endpoints,
-        base_urls: baseurl::infer(project),
+        base_urls,
         warnings,
         stats,
     })
@@ -172,7 +177,7 @@ fn to_spec(
     spec.query_params = fact.query_params.clone();
     spec.headers = fact.headers.clone();
     spec.body = fact.body.clone();
-    spec.auth = fact.auth.clone();
+    spec.auth = route.auth.clone();
     spec.summary = fact.summary.clone();
     spec.description = fact.description.clone();
     spec.group = route.group.clone();
