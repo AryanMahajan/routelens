@@ -258,8 +258,8 @@ mod tests {
         assert_eq!(
             rendered(&result),
             vec![
-                "GET /api/v1/users",
-                "POST /api/v1/users",
+                "GET /api/v1/users/",
+                "POST /api/v1/users/",
                 "GET /api/v1/users/{user_id}",
                 "GET /health",
             ]

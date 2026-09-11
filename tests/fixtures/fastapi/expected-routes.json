@@ -8,21 +8,21 @@
       "method": "DELETE",
       "path": "/api/v1/users/{user_id}",
       "group": "users",
-      "source": "app/api/users.py:27",
+      "source": "app/api/users.py:42",
       "has_auth": true
     },
     {
       "method": "GET",
       "path": "/?/stats",
       "group": "admin",
-      "source": "app/api/admin.py:8",
+      "source": "app/api/admin.py:11",
       "unresolved": true
     },
     {
       "method": "GET",
-      "path": "/api/v1/users",
+      "path": "/api/v1/users/",
       "group": "users",
-      "source": "app/api/users.py:10",
+      "source": "app/api/users.py:17",
       "query": [
         "limit",
         "search"
@@ -32,7 +32,7 @@
       "method": "GET",
       "path": "/api/v1/users/{user_id}",
       "group": "users",
-      "source": "app/api/users.py:16",
+      "source": "app/api/users.py:26",
       "headers": [
         "X-Trace-Id"
       ]
@@ -60,7 +60,7 @@
       "method": "GET",
       "path": "/v1/items",
       "group": "items",
-      "source": "app/api/items.py:8",
+      "source": "app/api/items.py:11",
       "query": [
         "page"
       ]
@@ -69,13 +69,13 @@
       "method": "GET",
       "path": "/v1/items/{item_id}",
       "group": "items",
-      "source": "app/api/items.py:13"
+      "source": "app/api/items.py:17"
     },
     {
       "method": "GET",
       "path": "/v2/items",
       "group": "items",
-      "source": "app/api/items.py:8",
+      "source": "app/api/items.py:11",
       "query": [
         "page"
       ]
@@ -84,13 +84,13 @@
       "method": "GET",
       "path": "/v2/items/{item_id}",
       "group": "items",
-      "source": "app/api/items.py:13"
+      "source": "app/api/items.py:17"
     },
     {
       "method": "POST",
-      "path": "/api/v1/users",
+      "path": "/api/v1/users/",
       "group": "users",
-      "source": "app/api/users.py:22",
+      "source": "app/api/users.py:35",
       "has_body": true,
       "has_auth": true
     },
@@ -98,13 +98,13 @@
       "method": "PUT",
       "path": "/v1/items/{item_id}",
       "group": "items",
-      "source": "app/api/items.py:13"
+      "source": "app/api/items.py:17"
     },
     {
       "method": "PUT",
       "path": "/v2/items/{item_id}",
       "group": "items",
-      "source": "app/api/items.py:13"
+      "source": "app/api/items.py:17"
     }
   ],
   "warnings": [

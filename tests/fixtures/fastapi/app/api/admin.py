@@ -2,9 +2,12 @@
 
 from fastapi import APIRouter
 
+from .items import ITEMS
+from .users import USERS
+
 router = APIRouter(tags=["admin"])
 
 
 @router.get("/stats")
 async def stats():
-    return {}
+    return {"users": len(USERS), "items": len(ITEMS)}

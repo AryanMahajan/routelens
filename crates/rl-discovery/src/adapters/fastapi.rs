@@ -746,6 +746,34 @@ mod tests {
         assert!(sink.mounts[1].auth.is_none());
     }
 
+    /// Running the fixture found this: FastAPI redirects `/api/v1/users` to
+    /// `/api/v1/users/` for a router declared with `@router.get("/")`, so the discovered
+    /// path must carry the slash — while `@app.get("/")` on the root is still just `/`.
+    #[test]
+    fn a_bare_slash_route_keeps_its_slash_under_a_prefix() {
+        let (routes, _) = discover(&[
+            (
+                "api/users.py",
+                "from fastapi import APIRouter
+                 router = APIRouter(prefix=\"/users\")
+                 @router.get(\"/\")
+                 def list_users(): ...
+",
+            ),
+            (
+                "main.py",
+                "from fastapi import FastAPI
+                 from api.users import router
+                 app = FastAPI()
+                 app.include_router(router, prefix=\"/api/v1\")
+                 @app.get(\"/\")
+                 def root(): ...
+",
+            ),
+        ]);
+        assert_eq!(routes, vec!["GET /", "GET /api/v1/users/"]);
+    }
+
     #[test]
     fn finds_a_route_declared_straight_on_the_app() {
         let routes = single(
@@ -817,7 +845,7 @@ mod tests {
                  app.include_router(router)\n",
             ),
         ]);
-        assert_eq!(routes, vec!["GET /items"]);
+        assert_eq!(routes, vec!["GET /items/"]);
     }
 
     #[test]

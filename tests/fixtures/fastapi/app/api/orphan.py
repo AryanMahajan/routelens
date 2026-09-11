@@ -7,4 +7,4 @@ router = APIRouter(prefix="/orphan")
 
 @router.get("/forgotten")
 async def forgotten():
-    return {}
+    return {"reachable": False}

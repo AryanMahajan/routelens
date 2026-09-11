@@ -9,4 +9,4 @@ from fastapi import APIRouter
 router = APIRouter(prefix="/dynamic")
 
 for name in ("alpha", "beta", "gamma"):
-    router.add_api_route(f"/{name}", lambda: {}, methods=["GET"])
+    router.add_api_route(f"/{name}", (lambda n: (lambda: {"name": n}))(name), methods=["GET"])

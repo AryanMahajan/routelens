@@ -110,7 +110,17 @@ impl Constants {
     /// than a confidently wrong path.
     pub fn path_value(&self, file: &ParsedFile, node: Node<'_>) -> PathTemplate {
         match self.string_value(file, node) {
-            Some(text) => PathTemplate::parse(&text, rl_model::ParamStyle::Braces),
+            Some(text) => {
+                let mut template = PathTemplate::parse(&text, rl_model::ParamStyle::Braces);
+                // `@router.get("/")` under `APIRouter(prefix="/users")` serves `/users/`,
+                // and Starlette answers `/users` with a 307 to it. Werkzeug does the same
+                // for Blueprints. So a bare `/` keeps its slash when joined onto a prefix;
+                // on the app root it still renders as `/`.
+                if text.trim() == "/" {
+                    template.trailing_slash = true;
+                }
+                template
+            }
             None => PathTemplate::from_segments(vec![PathSegment::unresolved(file.text(node))]),
         }
     }
