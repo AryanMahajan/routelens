@@ -1,7 +1,11 @@
 //! Where everything lives on disk.
 //!
-//! One type owns every path RouteLens writes, so the three-tier split is enforced in a single
+//! One type owns every path RouteLens writes, so the tier split is enforced in a single
 //! place rather than by convention scattered across the crate.
+//!
+//! Collections are the exception to "everything under `.routelens/`": they are *per user*,
+//! not per project — the same saved requests appear whichever project is open — and live
+//! in the user's data directory. Environments, secrets and history stay with the project.
 
 use crate::error::{Result, WorkspaceError};
 use std::path::{Path, PathBuf};
@@ -27,27 +31,57 @@ pub const GITIGNORE_CONTENTS: &str = "\
 # request history, and the rebuildable source index. None of it belongs in
 # version control.
 #
-# The files beside this one -- workspace.yaml, collections/, environments/ --
-# are meant to be committed. They contain secret *names* only, never values.
+# The files beside this one -- workspace.yaml and environments/ -- are meant
+# to be committed. They contain secret *names* only, never values.
 local/
 ";
 
-/// Every path in a workspace, derived from the directory that contains `.routelens/`.
+/// Environment variable that relocates the per-user data directory. Tests set it to a
+/// temporary directory; a portable install could point it at a USB stick.
+pub const DATA_DIR_ENV: &str = "ROUTELENS_HOME";
+
+/// The per-user data directory: `%LOCALAPPDATA%\\routelens` on Windows,
+/// `~/.local/share/routelens` on Linux, `~/Library/Application Support/routelens` on macOS.
+pub fn default_data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
+        return PathBuf::from(dir);
+    }
+    dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("routelens")
+}
+
+/// Every path in a workspace, derived from the directory that contains `.routelens/`, plus
+/// the per-user data directory the collections live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layout {
     root: PathBuf,
+    data_dir: PathBuf,
 }
 
 impl Layout {
     /// `root` is the directory *containing* `.routelens/` — a project root, or an
     /// application data directory for a standalone workspace.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Layout { root: root.into() }
+        Layout::with_data_dir(root, default_data_dir())
+    }
+
+    /// As [`Layout::new`], with collections kept under `data_dir` instead of the user's.
+    pub fn with_data_dir(root: impl Into<PathBuf>, data_dir: impl Into<PathBuf>) -> Self {
+        Layout {
+            root: root.into(),
+            data_dir: data_dir.into(),
+        }
     }
 
     /// The directory the workspace lives in.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The per-user data directory.
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
     // --- shared tier: committed ---------------------------------------------------------
@@ -60,7 +94,13 @@ impl Layout {
         self.dir().join(MANIFEST_FILE)
     }
 
+    /// Per user, shared by every project. See the module docs.
     pub fn collections_dir(&self) -> PathBuf {
+        self.data_dir.join(COLLECTIONS_DIR)
+    }
+
+    /// Where collections lived before they became per-user; read only to migrate.
+    pub fn legacy_collections_dir(&self) -> PathBuf {
         self.dir().join(COLLECTIONS_DIR)
     }
 
@@ -151,8 +191,17 @@ mod tests {
     fn shared_tier_sits_directly_under_the_workspace_dir() {
         let l = layout();
         assert!(l.manifest().ends_with(".routelens/workspace.yaml"));
-        assert!(l.collections_dir().ends_with(".routelens/collections"));
         assert!(l.environments_dir().ends_with(".routelens/environments"));
+    }
+
+    #[test]
+    fn collections_are_per_user_not_per_project() {
+        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelens");
+        assert!(l.collections_dir().ends_with("routelens/collections"));
+        assert!(!l.collections_dir().starts_with("/projects"));
+        assert!(l
+            .legacy_collections_dir()
+            .ends_with(".routelens/collections"));
     }
 
     #[test]

@@ -219,8 +219,11 @@ fn to_view(spec: &rl_model::EndpointSpec) -> EndpointView {
 }
 
 /// The application.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RouteLens {
+    /// Where per-user state — collections — lives. The user's data directory, or a
+    /// temporary one under test.
+    data_dir: PathBuf,
     workspace: Option<Workspace>,
     active_environment: Option<String>,
     engine: HttpEngine,
@@ -230,15 +233,37 @@ pub struct RouteLens {
     last_enrich: Option<EnrichReport>,
 }
 
+impl Default for RouteLens {
+    fn default() -> Self {
+        RouteLens::with_data_dir(rl_workspace::default_data_dir())
+    }
+}
+
 impl RouteLens {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// An application whose per-user state lives under `data_dir`.
+    pub fn with_data_dir(data_dir: impl Into<PathBuf>) -> Self {
+        RouteLens {
+            data_dir: data_dir.into(),
+            workspace: None,
+            active_environment: None,
+            engine: HttpEngine::default(),
+            last_scan: None,
+            last_enrich: None,
+        }
+    }
+
+    fn layout_for(&self, root: &Path) -> rl_workspace::Layout {
+        rl_workspace::Layout::with_data_dir(root, &self.data_dir)
+    }
+
     // --- workspace ----------------------------------------------------------------------
 
     pub fn open_workspace(&mut self, root: impl AsRef<Path>) -> Result<WorkspaceInfo> {
-        let workspace = Workspace::open(root)?;
+        let workspace = Workspace::open_in(self.layout_for(root.as_ref()))?;
         self.active_environment = workspace.manifest().default_environment.clone();
         self.workspace = Some(workspace);
         self.last_scan = None;
@@ -252,7 +277,7 @@ impl RouteLens {
         name: impl Into<String>,
         kind: WorkspaceKind,
     ) -> Result<WorkspaceInfo> {
-        let workspace = Workspace::create(root, name, kind)?;
+        let workspace = Workspace::create_in(self.layout_for(root.as_ref()), name, kind)?;
         self.active_environment = None;
         self.workspace = Some(workspace);
         self.ensure_an_environment()?;
@@ -979,9 +1004,18 @@ mod tests {
     use rl_model::{AuthConfig, HttpMethod};
     use tempfile::TempDir;
 
+    /// A throwaway per-user data directory, so tests never touch the real one.
+    fn data_dir() -> PathBuf {
+        let dir = TempDir::new().unwrap();
+        // Kept alive by leaking: the directory must outlive the `RouteLens` using it.
+        let path = dir.path().to_path_buf();
+        std::mem::forget(dir);
+        path
+    }
+
     fn app() -> (TempDir, RouteLens) {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "test", WorkspaceKind::Project)
             .unwrap();
         (dir, app)
@@ -998,7 +1032,7 @@ mod tests {
 
     #[test]
     fn operations_without_a_workspace_are_refused_clearly() {
-        let app = RouteLens::new();
+        let app = RouteLens::with_data_dir(data_dir());
         assert!(matches!(app.info(), Err(CoreError::NoWorkspace)));
         assert!(matches!(
             app.collection_names(),
@@ -1023,7 +1057,7 @@ mod tests {
     #[test]
     fn a_new_workspace_gets_a_local_environment_that_is_remembered() {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         let info = app
             .create_workspace(dir.path(), "t", WorkspaceKind::Standalone)
             .unwrap();
@@ -1035,7 +1069,7 @@ mod tests {
         app.save_environment(&staging).unwrap();
         app.set_active_environment(Some("staging")).unwrap();
 
-        let mut reopened = RouteLens::new();
+        let mut reopened = RouteLens::with_data_dir(data_dir());
         let info = reopened.open_workspace(dir.path()).unwrap();
         assert_eq!(info.active_environment.as_deref(), Some("staging"));
 
@@ -1120,7 +1154,7 @@ mod tests {
     #[test]
     fn the_whole_scan_saves_as_a_collection_filed_by_group() {
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
         assert!(matches!(
@@ -1312,7 +1346,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "fixture", WorkspaceKind::Project)
             .unwrap();
         (dir, app)
@@ -1359,7 +1393,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "x", WorkspaceKind::Project)
             .unwrap();
         let scan = app.scan().unwrap();
@@ -1407,7 +1441,7 @@ mod tests {
     #[test]
     fn a_standalone_workspace_has_nothing_to_scan() {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "client", WorkspaceKind::Standalone)
             .unwrap();
 
@@ -1478,7 +1512,7 @@ mod tests {
     #[test]
     fn an_enrich_proposal_runs_nothing_and_names_everything() {
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
 
@@ -1508,7 +1542,7 @@ mod tests {
     #[test]
     fn enrich_is_refused_for_a_framework_with_no_runtime_spec() {
         let dir = fixture_copy("express");
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "express", WorkspaceKind::Project)
             .unwrap();
         let scan = app.scan().unwrap();
@@ -1528,7 +1562,7 @@ mod tests {
             return;
         };
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::new();
+        let mut app = RouteLens::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
         let before = app.scan().unwrap();

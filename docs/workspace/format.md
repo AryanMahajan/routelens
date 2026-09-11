@@ -1,13 +1,13 @@
 # Workspace format
 
-Everything RouteLens stores lands in a `.routelens/` directory. The layout splits into three
-tiers by how the data should be treated: shared, private, and disposable.
+What belongs to a *project* lands in its `.routelens/` directory, split into three tiers by
+how the data should be treated: shared, private, and disposable. What belongs to *you* —
+saved requests — lives in your user data directory and is the same whichever project is
+open.
 
 ```
-.routelens/
+.routelens/                   # in the project
 ├── workspace.yaml            # committed — workspace identity and settings
-├── collections/
-│   └── users.yaml            # committed — saved requests
 ├── environments/
 │   ├── local.yaml            # committed — variable names, non-secret values
 │   └── staging.yaml          # committed
@@ -15,8 +15,18 @@ tiers by how the data should be treated: shared, private, and disposable.
 └── local/                    # never committed
     ├── secrets.json          # secret values (or an OS keychain reference)
     ├── history.sqlite        # request history
+    ├── routelens_enrich.py   # the runtime-enrich helper, rewritten before each run
     └── index.sqlite          # source index cache — disposable, rebuildable
+
+<user data dir>/routelens/    # per user, every project
+└── collections/
+    └── users.yaml            # saved requests
 ```
+
+The user data directory is `%LOCALAPPDATA%\routelens` on Windows,
+`~/.local/share/routelens` on Linux and `~/Library/Application Support/routelens` on macOS;
+`ROUTELENS_HOME` overrides it. A workspace from before collections were per-user has its
+`.routelens/collections/` moved there the first time it is opened.
 
 RouteLens writes `.routelens/.gitignore` automatically on workspace creation, so the private
 tier is excluded from the moment it exists rather than after someone notices.
@@ -29,9 +39,10 @@ and conflating them means either caches get backed up or secrets get treated as 
 
 | Tier | Contents | Committed | Safe to delete |
 |---|---|---|---|
-| Shared | Collections, environments, settings | Yes | No — real work |
+| Shared | Environments, settings | Yes | No — real work |
 | Private | Secret values | No | No — real credentials |
 | Disposable | History, source index | No | Yes — rebuilds itself |
+| Per user | Collections | Not part of the project | No — real work |
 
 ## `workspace.yaml`
 
@@ -48,8 +59,9 @@ default_environment: local
 
 ## Collections
 
-One YAML file per collection, designed to read well in a diff. Requests appear in the order
-they are listed. A folder is a `folder: Users/Admin` line on the request, not a nested
+One YAML file per collection, in the user data directory, shared by every project you
+open. Still plain YAML, designed to read well — in an editor, or in a dotfiles repo if you
+keep one. Requests appear in the order they are listed. A folder is a `folder: Users/Admin` line on the request, not a nested
 structure: the list stays flat, so reordering is a moved block and moving a request into
 another folder is a one-line change.
 
@@ -131,11 +143,10 @@ The shared tier is meant to be reviewed in a pull request, which drives several 
 - YAML with stable key ordering, so diffs reflect real edits rather than serializer churn
 - No generated IDs in committed files where a name will do
 - No timestamps in the shared tier — those belong to history
-- One collection per file, so two people adding requests to different collections do not
-  conflict
 
-The intended payoff: someone clones the repo, opens RouteLens, and the project's requests are
-already there.
+Collections follow the same rules even though they are not committed with the project, so
+that **Save all** on a scan produces a file worth reading, and so that they can be shared
+by hand or through a dotfiles repository.
 
 ## Standalone workspaces
 

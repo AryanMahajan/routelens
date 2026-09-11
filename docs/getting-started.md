@@ -91,8 +91,10 @@ raw, or saved to a file for large payloads.
 
 **Save** (Ctrl+S) writes the request into a collection — the box next to the button names
 which; type a new name to create one. A request opened from a collection saves back to it.
-Collections are YAML files under `.routelens/collections/`, meant to be committed, so the
-next person to clone the project finds the requests already there.
+Collections are yours, not the project's: they live in your user data directory
+(`%LOCALAPPDATA%\routelens\collections` on Windows, `~/.local/share/routelens/collections`
+on Linux) and the same list appears in every project you open. Environments, secrets and
+history stay with the project.
 
 The **Collections** panel is where they are managed: drag a request to reorder it, drop it
 on a folder or another collection to move it, and use the `…` menu on a request to rename,

@@ -90,6 +90,6 @@ Before committing `.routelens/` for the first time:
 
 - [ ] `.routelens/.gitignore` exists and ignores `local/`
 - [ ] `git status` shows no `local/` contents
-- [ ] No literal tokens in `collections/*.yaml` — search for `Bearer ` and `api_key`
+- [ ] No literal tokens in your collections — search for `Bearer ` and `api_key`
 - [ ] Environment files list secret *names* only
 - [ ] `local.yaml` has working non-sensitive defaults, so a fresh clone runs

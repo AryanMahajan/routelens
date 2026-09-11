@@ -58,7 +58,7 @@ project have?"* to *"I can see it, understand it, and test it."*
 | Discovers routes from source code  | **✅**    | ✗       | ✗        | ✗     | ✗          |
 | Click-through to the defining line | **✅**    | ✗       | ✗        | ✗     | ✗          |
 | Works offline, no account          | ✅        | partial | partial  | ✅    | ✅         |
-| Git-friendly plain-text workspace  | ✅        | ✗       | ✗        | ✅    | ✗          |
+| Git-friendly plain-text environments | ✅      | ✗       | ✗        | ✅    | ✗          |
 | Secrets kept out of committed files| ✅        | vault   | vault    | ✅    | ✗          |
 | cURL / OpenAPI / raw HTTP import   | ✅        | ✅      | ✅       | ✅    | ✅         |
 | Environments and `{{variables}}`   | ✅        | ✅      | ✅       | ✅    | ✅         |
@@ -86,6 +86,8 @@ project have?"* to *"I can see it, understand it, and test it."*
   timeouts.
 - **Environments, variables and secrets** in three tiers — committed workspace files,
   a private local secret store, disposable caches — with history recorded redacted.
+  **Collections are yours**: saved requests live in your user data directory and follow
+  you into every project.
 - **Import** from cURL, raw HTTP and OpenAPI 3.x / Swagger 2.0.
 
 Verified by 460+ tests, including fixture projects per framework whose snapshots record
@@ -153,7 +155,8 @@ Longer version: [how it works](docs/discovery/how-it-works.md).
 2. **Local-first** — no account, no cloud, everything works offline.
 3. **Zero configuration where possible** — if the project already states something, read it.
 4. **Codebase-aware** — always know where an endpoint actually comes from.
-5. **Git-friendly** — workspace definitions are readable files you can review in a diff.
+5. **Git-friendly** — environments and workspace settings are readable files you can
+   review in a diff; collections are plain YAML too, kept per user.
 6. **Extensible** — frameworks are independent adapters, never special cases in the UI.
 7. **No feature bloat** — solve discovery and testing exceptionally well first.
 

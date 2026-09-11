@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+dirs = "6"
 rl-model.workspace = true
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde.workspace = true

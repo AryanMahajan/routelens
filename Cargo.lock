@@ -2965,6 +2965,7 @@ dependencies = [
 name = "rl-workspace"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "rl-model",
  "rusqlite",
  "serde",

@@ -108,7 +108,11 @@ impl Workspace {
         name: impl Into<String>,
         kind: WorkspaceKind,
     ) -> Result<Self> {
-        let layout = Layout::new(root.as_ref());
+        Workspace::create_in(Layout::new(root.as_ref()), name, kind)
+    }
+
+    /// [`Workspace::create`] with an explicit layout — a test's temporary data directory.
+    pub fn create_in(layout: Layout, name: impl Into<String>, kind: WorkspaceKind) -> Result<Self> {
         if layout.exists() {
             return Err(WorkspaceError::AlreadyExists(layout.dir()));
         }
@@ -135,7 +139,11 @@ impl Workspace {
 
     /// Open an existing workspace.
     pub fn open(root: impl AsRef<Path>) -> Result<Self> {
-        let layout = Layout::new(root.as_ref());
+        Workspace::open_in(Layout::new(root.as_ref()))
+    }
+
+    /// [`Workspace::open`] with an explicit layout.
+    pub fn open_in(layout: Layout) -> Result<Self> {
         let path = layout.manifest();
         if !path.is_file() {
             return Err(WorkspaceError::NotFound(layout.dir()));
@@ -156,6 +164,8 @@ impl Workspace {
             write_file(&gitignore, layout::GITIGNORE_CONTENTS)?;
         }
 
+        migrate_collections(&layout)?;
+
         Ok(Workspace { layout, manifest })
     }
 
@@ -164,11 +174,18 @@ impl Workspace {
         name: impl Into<String>,
         kind: WorkspaceKind,
     ) -> Result<Self> {
-        let root = root.as_ref();
-        if Layout::new(root).exists() {
-            Workspace::open(root)
+        Workspace::open_or_create_in(Layout::new(root.as_ref()), name, kind)
+    }
+
+    pub fn open_or_create_in(
+        layout: Layout,
+        name: impl Into<String>,
+        kind: WorkspaceKind,
+    ) -> Result<Self> {
+        if layout.exists() {
+            Workspace::open_in(layout)
         } else {
-            Workspace::create(root, name, kind)
+            Workspace::create_in(layout, name, kind)
         }
     }
 
@@ -208,6 +225,10 @@ impl Workspace {
 
     pub fn save_collection(&self, collection: &Collection) -> Result<()> {
         let path = self.layout.collection_file(&collection.name)?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)
+                .map_err(|e| WorkspaceError::io(format!("creating {}", dir.display()), e))?;
+        }
         write_yaml(&path, collection, &collection.name)
     }
 
@@ -335,6 +356,47 @@ fn list_names(dir: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// Move collections saved under the project's `.routelens/collections/` — where they lived
+/// before becoming per-user — into the user's data directory.
+///
+/// A file whose name already exists there is left where it is rather than overwritten,
+/// and reported through the returned names so the caller can say so.
+fn migrate_collections(layout: &Layout) -> Result<Vec<String>> {
+    let legacy = layout.legacy_collections_dir();
+    if !legacy.is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(&legacy)
+        .map_err(|e| WorkspaceError::io(format!("reading {}", legacy.display()), e))?;
+
+    let mut moved = Vec::new();
+    let mut kept = false;
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let Some(name) = layout::name_from_file(&from) else {
+            kept = true;
+            continue;
+        };
+        let to = layout.collection_file(&name)?;
+        if to.exists() {
+            kept = true;
+            continue;
+        }
+        if let Some(dir) = to.parent() {
+            std::fs::create_dir_all(dir)
+                .map_err(|e| WorkspaceError::io(format!("creating {}", dir.display()), e))?;
+        }
+        std::fs::rename(&from, &to)
+            .or_else(|_| std::fs::copy(&from, &to).and_then(|_| std::fs::remove_file(&from)))
+            .map_err(|e| WorkspaceError::io(format!("moving {}", from.display()), e))?;
+        moved.push(name);
+    }
+    if !kept {
+        let _ = std::fs::remove_dir(&legacy);
+    }
+    Ok(moved)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,10 +404,69 @@ mod tests {
     use rl_model::{AuthConfig, HttpMethod, RequestDraft};
     use tempfile::TempDir;
 
+    /// A workspace whose per-user data directory is inside the temp dir, so tests never
+    /// see each other's collections — or the developer's.
+    fn isolated(dir: &Path) -> Layout {
+        Layout::with_data_dir(dir, dir.join("_data"))
+    }
+
     fn workspace() -> (TempDir, Workspace) {
         let dir = TempDir::new().unwrap();
-        let ws = Workspace::create(dir.path(), "myproject", WorkspaceKind::Project).unwrap();
+        let ws = Workspace::create_in(isolated(dir.path()), "myproject", WorkspaceKind::Project)
+            .unwrap();
         (dir, ws)
+    }
+
+    #[test]
+    fn collections_are_shared_across_projects_and_migrated_from_older_workspaces() {
+        let dir = TempDir::new().unwrap();
+        let data = dir.path().join("_data");
+        let a = Workspace::create_in(
+            Layout::with_data_dir(dir.path().join("a"), &data),
+            "a",
+            WorkspaceKind::Project,
+        )
+        .unwrap();
+        let b = Workspace::create_in(
+            Layout::with_data_dir(dir.path().join("b"), &data),
+            "b",
+            WorkspaceKind::Project,
+        )
+        .unwrap();
+
+        a.save_collection(&Collection::new("Shared")).unwrap();
+        assert_eq!(
+            b.collection_names().unwrap(),
+            vec!["Shared"],
+            "same user, same list"
+        );
+        assert!(
+            !a.layout().legacy_collections_dir().exists(),
+            "nothing is written under the project"
+        );
+
+        // A workspace from before collections were per-user carries them along on open.
+        let old = dir.path().join("old");
+        std::fs::create_dir_all(old.join(".routelens/collections")).unwrap();
+        std::fs::write(
+            old.join(".routelens/workspace.yaml"),
+            "version: 1\nname: old\n",
+        )
+        .unwrap();
+        std::fs::write(
+            old.join(".routelens/collections/Legacy.yaml"),
+            "version: 1\nname: Legacy\nrequests: []\n",
+        )
+        .unwrap();
+        let reopened = Workspace::open_in(Layout::with_data_dir(&old, &data)).unwrap();
+        assert_eq!(
+            reopened.collection_names().unwrap(),
+            vec!["Legacy", "Shared"]
+        );
+        assert!(
+            !old.join(".routelens/collections").exists(),
+            "moved, not copied"
+        );
     }
 
     #[test]
@@ -370,7 +491,7 @@ mod tests {
         let (dir, ws) = workspace();
         std::fs::remove_file(ws.layout().gitignore()).unwrap();
 
-        let reopened = Workspace::open(dir.path()).unwrap();
+        let reopened = Workspace::open_in(isolated(dir.path())).unwrap();
         assert!(
             reopened.layout().gitignore().is_file(),
             "a workspace must never start writing secrets into a tracked tree"
@@ -381,7 +502,7 @@ mod tests {
     fn creating_twice_is_refused_rather_than_overwriting() {
         let (dir, _ws) = workspace();
         assert!(matches!(
-            Workspace::create(dir.path(), "other", WorkspaceKind::Project),
+            Workspace::create_in(isolated(dir.path()), "other", WorkspaceKind::Project),
             Err(WorkspaceError::AlreadyExists(_))
         ));
     }
@@ -390,7 +511,7 @@ mod tests {
     fn opening_a_directory_without_a_workspace_reports_not_found() {
         let dir = TempDir::new().unwrap();
         assert!(matches!(
-            Workspace::open(dir.path()),
+            Workspace::open_in(isolated(dir.path())),
             Err(WorkspaceError::NotFound(_))
         ));
     }
@@ -405,7 +526,7 @@ mod tests {
         std::fs::write(&path, text).unwrap();
 
         assert!(matches!(
-            Workspace::open(dir.path()),
+            Workspace::open_in(isolated(dir.path())),
             Err(WorkspaceError::UnsupportedVersion {
                 found: 999,
                 supported: 1
@@ -422,7 +543,7 @@ mod tests {
         ws.manifest_mut().default_environment = Some("local".into());
         ws.save().unwrap();
 
-        let reopened = Workspace::open(dir.path()).unwrap();
+        let reopened = Workspace::open_in(isolated(dir.path())).unwrap();
         assert_eq!(reopened.manifest(), ws.manifest());
     }
 

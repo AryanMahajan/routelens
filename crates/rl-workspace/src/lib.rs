@@ -69,6 +69,6 @@ pub use collection::Collection;
 pub use environment::Environment;
 pub use error::{Result, WorkspaceError};
 pub use history::{History, HistoryEntry, NewEntry, RedactedEntry};
-pub use layout::Layout;
+pub use layout::{default_data_dir, Layout, DATA_DIR_ENV};
 pub use secrets::{FileSecretStore, SecretStore};
 pub use workspace::{ProjectRef, Workspace, WorkspaceKind, WorkspaceManifest};
