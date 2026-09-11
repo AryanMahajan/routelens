@@ -39,8 +39,18 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Runtime enrich's end-to-end tests import the Flask and FastAPI fixtures for real,
+      # and skip themselves without an interpreter that can. Give them one.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the fixtures' dependencies
+        run: pip install -r tests/fixtures/flask/requirements.txt -r tests/fixtures/fastapi/requirements.txt
+
       - name: Test
         run: cargo test --workspace
+        env:
+          ROUTELENS_TEST_PYTHON: python
 
   ui:
     name: UI

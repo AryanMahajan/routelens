@@ -25,6 +25,7 @@ export function Sidebar({
   scan,
   scanning,
   onScan,
+  onEnrich,
   onOpenEndpoint,
 }: {
   workspace: WorkspaceInfo | null;
@@ -37,6 +38,7 @@ export function Sidebar({
   scan: ScanResult | null;
   scanning: boolean;
   onScan: () => void;
+  onEnrich: () => void;
   onOpenEndpoint: (endpoint: EndpointSpec) => void;
 }) {
   // The API tree is the reason RouteLens exists, so it opens first for a project workspace.
@@ -166,6 +168,7 @@ export function Sidebar({
               scan={scan}
               scanning={scanning}
               onScan={onScan}
+              onEnrich={onEnrich}
               onOpenEndpoint={onOpenEndpoint}
             />
           ) : (

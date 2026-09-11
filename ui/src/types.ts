@@ -281,7 +281,11 @@ export interface EndpointSpec {
   auth: boolean;
   has_body: boolean;
   query: string[];
+  /** After runtime enrich: how this endpoint fared in the merge. Absent until then. */
+  enrich?: EnrichProvenance | null;
 }
+
+export type EnrichProvenance = "matched" | "runtime_only" | "static_only" | "gap_filled";
 
 export interface DetectedFramework {
   id: string;
@@ -309,4 +313,47 @@ export interface ScanResult {
   base_urls: BaseUrlCandidate[];
   warnings: string[];
   stats: ScanStats;
+  /** Whether runtime enrich can be offered — only for frameworks with a runtime spec. */
+  enrichable: boolean;
+  /** Present once runtime enrich has run on this scan. */
+  enrich: EnrichReport | null;
+}
+
+/** What one runtime-enrich run did. */
+export interface EnrichReport {
+  framework: string;
+  target: string;
+  interpreter: string;
+  /** The exact command that ran. */
+  command: string;
+  matched: number;
+  runtime_only: number;
+  static_only: number;
+  gaps_filled: number;
+  duration_ms: number;
+  /** What the application printed while importing. Shown, never parsed. */
+  stderr: string;
+  warnings: string[];
+}
+
+export interface AppTarget {
+  /** `app.main:app`, or `app:create_app()` for a factory. */
+  target: string;
+  cwd: string;
+  source: string;
+  confidence: number;
+}
+
+export interface Interpreter {
+  path: string;
+  source: string;
+}
+
+/** The consent dialog's content. Nothing has run when this arrives. */
+export interface EnrichProposal {
+  targets: AppTarget[];
+  interpreters: Interpreter[];
+  remembered_target?: string | null;
+  command?: string | null;
+  helper_path: string;
 }

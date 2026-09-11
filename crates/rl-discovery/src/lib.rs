@@ -1,7 +1,8 @@
 //! # rl-discovery
 //!
-//! Reads a project's source and produces [`rl_model::EndpointSpec`]s. It never executes the
-//! project's code — that is [runtime enrich][enrich], which lives behind an explicit opt-in.
+//! Reads a project's source and produces [`rl_model::EndpointSpec`]s. The scan never
+//! executes the project's code. The one thing in this crate that does is [`enrich::run`],
+//! which runs only a plan the developer has been shown — see [runtime enrich][enrich].
 //!
 //! ## Pipeline
 //!
@@ -22,13 +23,15 @@
 //!
 //! [enrich]: https://github.com/AryanMahajan/routelens/blob/main/docs/discovery/runtime-enrich.md
 //!
-//! Status: P4 complete — FastAPI, Next.js and Express adapters over one graph, with
-//! Python and JavaScript/TypeScript module resolution. Flask arrives in P5, Django in P6.
+//! Status: P5 complete — FastAPI, Flask, Next.js and Express adapters over one graph, with
+//! Python and JavaScript/TypeScript module resolution, plus opt-in runtime enrich for the
+//! Python frameworks. Django arrives in P6.
 
 #![forbid(unsafe_code)]
 
 pub mod adapters;
 pub mod baseurl;
+pub mod enrich;
 pub mod error;
 pub mod facts;
 pub mod graph;
@@ -38,6 +41,9 @@ pub mod scan;
 
 pub use adapters::{Detection, FrameworkAdapter};
 pub use baseurl::BaseUrlCandidate;
+pub use enrich::{
+    AppTarget, EnrichError, EnrichOutput, EnrichPlan, Interpreter, MergeReport, Provenance,
+};
 pub use error::{DiscoveryError, Result};
 pub use facts::{
     ExportFact, FactSink, ImportFact, MountFact, RouteFact, RouterFact, Span, SymbolId, SymbolRef,
@@ -45,4 +51,4 @@ pub use facts::{
 pub use graph::{GraphWarning, RegistrationGraph, ResolvedRoute};
 pub use index::{ParsedFile, SourceIndex};
 pub use project::{Language, ProjectContext};
-pub use scan::{scan, scan_project, DetectedFramework, ScanResult, ScanStats};
+pub use scan::{scan, scan_project, AppRoot, DetectedFramework, ScanResult, ScanStats};

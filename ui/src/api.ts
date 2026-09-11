@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   normalizeRequest,
   type Collection,
+  type EnrichProposal,
   type ScanResult,
   type Environment,
   type Exchange,
@@ -34,6 +35,11 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
     }
     throw new CoreError(String(error));
   }
+}
+
+/** `enrichable` and `enrich` are skipped on the wire when false/absent. */
+function normalizeScan(wire: ScanResult): ScanResult {
+  return { ...wire, enrichable: wire.enrichable ?? false, enrich: wire.enrich ?? null };
 }
 
 export const api = {
@@ -72,7 +78,15 @@ export const api = {
     call<void>("save_request", { collection, request }),
 
   // --- discovery (reads source; never executes it) ---
-  scanProject: () => call<ScanResult>("scan_project"),
+  scanProject: async () => normalizeScan(await call<ScanResult>("scan_project")),
+
+  // --- runtime enrich (the one path that executes project code — after consent) ---
+  enrichProposal: () => call<EnrichProposal>("enrich_proposal"),
+  enrichCommand: (target: string, interpreter: string | null) =>
+    call<string>("enrich_command", { target, interpreter }),
+  runEnrich: async (target: string, interpreter: string | null) =>
+    normalizeScan(await call<ScanResult>("run_enrich", { target, interpreter })),
+  revokeEnrich: () => call<void>("revoke_enrich"),
   openEndpoint: async (id: string, baseUrl?: string) =>
     normalizeRequest(
       await call<WireRequestDraft>("open_endpoint", { id, baseUrl: baseUrl ?? null }),

@@ -14,11 +14,13 @@ export function Explorer({
   scan,
   scanning,
   onScan,
+  onEnrich,
   onOpenEndpoint,
 }: {
   scan: ScanResult | null;
   scanning: boolean;
   onScan: () => void;
+  onEnrich: () => void;
   onOpenEndpoint: (endpoint: EndpointSpec) => void;
 }) {
   const [filter, setFilter] = useState("");
@@ -89,22 +91,50 @@ export function Explorer({
             placeholder:text-muted/60 focus:border-accent"
         />
 
-        <div className="flex items-center justify-between text-[11px] text-muted">
-          <span className="tabular-nums">
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
+          <span className="min-w-0 truncate tabular-nums">
             {scan.stats.endpoints_found} endpoint
             {scan.stats.endpoints_found === 1 ? "" : "s"}
             {scan.frameworks.length > 0 &&
               ` · ${scan.frameworks.map((f) => f.id).join(" + ")}`}
           </span>
-          <button onClick={onScan} disabled={scanning} className="transition hover:text-ink">
-            {scanning ? "Scanning…" : "Rescan"}
-          </button>
+          <span className="flex shrink-0 items-center gap-2">
+            {scan.enrichable && (
+              <button
+                onClick={onEnrich}
+                disabled={scanning}
+                title="Runtime enrich: import the application and ask it for its exact routes. Shows the command and asks first."
+                className={`transition hover:text-ink ${scan.enrich ? "text-accent" : ""}`}
+              >
+                {scan.enrich ? "Enriched ✓" : "Ask the app"}
+              </button>
+            )}
+            <button onClick={onScan} disabled={scanning} className="transition hover:text-ink">
+              {scanning ? "Scanning…" : "Rescan"}
+            </button>
+          </span>
         </div>
+
+        {scan.enrich && (
+          <p
+            className="rounded border border-accent/30 bg-accent/5 px-2 py-1 text-[11px] text-muted"
+            title={scan.enrich.command}
+          >
+            Runtime: {scan.enrich.matched} confirmed
+            {scan.enrich.gaps_filled > 0 && ` · ${scan.enrich.gaps_filled} gap${scan.enrich.gaps_filled === 1 ? "" : "s"} resolved`}
+            {scan.enrich.runtime_only > 0 && ` · ${scan.enrich.runtime_only} runtime-only`}
+            {scan.enrich.static_only > 0 && ` · ${scan.enrich.static_only} not served`}
+          </p>
+        )}
 
         {gaps > 0 && (
           <p
             className="rounded border border-method-post/30 bg-method-post/5 px-2 py-1 text-[11px] text-method-post"
-            title="Static analysis could not fully determine these. Runtime enrich resolves most of them."
+            title={
+              scan.enrichable
+                ? "Static analysis could not fully determine these. \"Ask the app\" resolves most of them."
+                : "Static analysis could not fully determine these."
+            }
           >
             {gaps} endpoint{gaps === 1 ? " has" : "s have"} gaps
           </p>
@@ -115,7 +145,7 @@ export function Explorer({
         {groups.length === 0 && (
           <p className="px-1 py-4 text-muted">
             {scan.endpoints.length === 0
-              ? "No endpoints found. RouteLens supports FastAPI today; Next.js and Express are next."
+              ? "No endpoints found. RouteLens understands FastAPI, Flask, Express and Next.js today."
               : "Nothing matches that filter."}
           </p>
         )}
@@ -191,6 +221,30 @@ function EndpointRow({
       {endpoint.auth && (
         <span className="shrink-0 text-[10px] text-method-post" title="Requires authentication">
           🔒
+        </span>
+      )}
+      {endpoint.enrich === "runtime_only" && (
+        <span
+          className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-semibold text-accent"
+          title="Found only by asking the application — registered dynamically, so there is no source line to open"
+        >
+          RT
+        </span>
+      )}
+      {endpoint.enrich === "gap_filled" && (
+        <span
+          className="shrink-0 text-[10px] text-accent"
+          title="This path could not be resolved from source; the application supplied it"
+        >
+          ✓
+        </span>
+      )}
+      {endpoint.enrich === "static_only" && (
+        <span
+          className="shrink-0 text-[10px] text-method-post"
+          title="Declared in source, but the application does not serve it"
+        >
+          ∅
         </span>
       )}
       {endpoint.orphaned && (

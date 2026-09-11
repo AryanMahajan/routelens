@@ -201,6 +201,24 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
             // Path parameters are already seeded from the template; enrich rather than
             // replace, so a parameter the document forgot to declare is not lost.
             for declared in path_params {
+                // A `format: path` parameter spans `/`s — Flask's `<path:name>` reported
+                // by runtime enrich — and the template segment should say so.
+                if declared.ty == Some(TypeHint::Path) {
+                    for segment in &mut spec.path.segments {
+                        if let rl_model::PathSegment::Param {
+                            name,
+                            ty,
+                            catch_all,
+                            ..
+                        } = segment
+                        {
+                            if *name == declared.name {
+                                *ty = Some(TypeHint::Path);
+                                *catch_all = true;
+                            }
+                        }
+                    }
+                }
                 match spec
                     .path_params
                     .iter_mut()
@@ -314,6 +332,7 @@ fn build_param(parameter: &Value, name: &str) -> ParamSpec {
 fn type_hint(ty: &str, format: Option<&str>) -> TypeHint {
     match (ty, format) {
         (_, Some("uuid")) => TypeHint::Uuid,
+        (_, Some("path")) => TypeHint::Path,
         (_, Some("date")) => TypeHint::Date,
         (_, Some("date-time")) => TypeHint::DateTime,
         ("integer", _) => TypeHint::Integer,

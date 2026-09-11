@@ -27,10 +27,14 @@ your application to ask it directly for its API. This executes project code, inc
 import-time side effects. Therefore:
 
 - It never runs automatically.
-- Before the first run for a given project, RouteLens displays the exact command and
-  interpreter it will use, and waits for confirmation.
-- The grant is per project, stored in `.routelens/`, and revocable.
-- The helper introspects only. It starts no server and binds no port.
+- Every run goes through a dialog that displays the exact command and interpreter it will
+  use, and waits for confirmation.
+- The target is remembered per project in `.routelens/workspace.yaml` and revocable from
+  the same dialog. The interpreter is never stored.
+- The helper script is written to `.routelens/local/` (gitignored) before it runs, so what
+  is shown is what executes and can be read first.
+- The helper introspects only. It starts no server, binds no port, and writes nothing —
+  bytecode caching is disabled for the run.
 
 Treat enabling runtime enrich as equivalent to running the project's test suite: fine for
 your own code, a decision worth making consciously for someone else's.

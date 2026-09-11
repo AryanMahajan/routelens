@@ -35,7 +35,7 @@ pub mod shell;
 
 pub use curl::parse_curl;
 pub use error::{ImportError, Result};
-pub use openapi::{parse_openapi, OpenApiImport};
+pub use openapi::{parse_openapi, parse_openapi_value, OpenApiImport};
 pub use raw_http::parse_raw_http;
 pub use shell::tokenize;
 

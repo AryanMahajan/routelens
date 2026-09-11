@@ -50,6 +50,24 @@ Selecting an endpoint shows everything discovery could establish:
 Where discovery could not establish something, the UI says so. An unresolvable path segment
 appears as `?` with the source expression, rather than a guess.
 
+## Ask the application (FastAPI and Flask)
+
+Static analysis stops where the code needs running: a prefix from `settings.API_PREFIX`,
+routes registered in a loop, Pydantic schemas. For FastAPI and Flask projects the endpoint
+list offers **Ask the app**. It shows the exact command it will run — interpreter, helper
+script, `module:app` target — and where each part came from, and waits for you to press
+**Run**. Nothing is executed before that.
+
+The helper imports your application, asks it for its own route table (`app.openapi()` or
+`url_map`), and exits. The result is merged onto the static scan: exact paths and schemas,
+source locations kept, and every difference labelled — `RT` for a route only the
+application knows about, `✓` for a gap the application closed, `∅` for something declared
+in source that the application does not serve.
+
+The target is remembered in `.routelens/workspace.yaml`; **Forget** in the dialog withdraws
+it. Rescanning returns to the static result. Details in
+[runtime enrich](discovery/runtime-enrich.md).
+
 ## Send a request
 
 1. Pick a base URL — RouteLens suggests candidates it found; you can override it.

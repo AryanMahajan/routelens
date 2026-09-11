@@ -10,6 +10,7 @@ import {
   type WorkspaceInfo,
 } from "./types";
 import { VariablesContext } from "./variables";
+import { EnrichDialog } from "./components/EnrichDialog";
 import { EnvironmentDialog } from "./components/EnvironmentDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { RequestEditor } from "./components/RequestEditor";
@@ -49,6 +50,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string>(() => "");
   const [importing, setImporting] = useState(false);
   const [managingEnvironments, setManagingEnvironments] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const [saveTarget, setSaveTarget] = useState("Saved");
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -243,6 +245,7 @@ export default function App() {
           scan={scan}
           scanning={scanning}
           onScan={runScan}
+          onEnrich={() => setEnriching(true)}
           onOpenEndpoint={openEndpoint}
           onOpenRequest={(saved) => openTab(saved, (t) => t.request.id === saved.id)}
         />
@@ -319,6 +322,16 @@ export default function App() {
               refresh();
             }}
             onImported={(imported) => openTab(imported)}
+          />
+        )}
+
+        {enriching && (
+          <EnrichDialog
+            onClose={() => setEnriching(false)}
+            onEnriched={(result) => {
+              setScan(result);
+              // Endpoints may have changed identity; tabs opened from the old scan still work.
+            }}
           />
         )}
 

@@ -44,10 +44,11 @@ pub mod error;
 
 pub use error::{CoreError, Result};
 
-use rl_discovery::ScanResult;
+use rl_discovery::enrich::{self, AppTarget, Interpreter, Provenance};
+use rl_discovery::{ProjectContext, ScanResult};
 use rl_http::{Exchange, HttpEngine};
 use rl_import::{Imported, OpenApiImport};
-use rl_model::{RequestDraft, VariableContext};
+use rl_model::{Confidence, EndpointSpec, Origin, RequestDraft, VariableContext};
 use rl_workspace::{
     Collection, Environment, History, HistoryEntry, NewEntry, SecretStore, Workspace, WorkspaceKind,
 };
@@ -93,6 +94,10 @@ pub struct EndpointView {
     pub auth: bool,
     pub has_body: bool,
     pub query: Vec<String>,
+    /// After runtime enrich: `matched`, `runtime_only`, `static_only` or `gap_filled`.
+    /// Absent until enrich has run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enrich: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +105,25 @@ pub struct SourceView {
     /// Forward slashes, so the UI renders identically on every platform.
     pub file: String,
     pub line: u32,
+}
+
+/// What one runtime-enrich run did, for the UI to report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnrichReport {
+    pub framework: String,
+    pub target: String,
+    pub interpreter: PathBuf,
+    /// The exact command that ran.
+    pub command: String,
+    pub matched: usize,
+    pub runtime_only: usize,
+    pub static_only: usize,
+    pub gaps_filled: usize,
+    pub duration_ms: u64,
+    /// What the application printed while importing — logs, warnings. Shown, never parsed.
+    pub stderr: String,
+    /// What the OpenAPI importer could not honour.
+    pub warnings: Vec<String>,
 }
 
 /// What a scan hands the UI.
@@ -110,18 +134,53 @@ pub struct ProjectScan {
     pub base_urls: Vec<rl_discovery::BaseUrlCandidate>,
     pub warnings: Vec<String>,
     pub stats: rl_discovery::ScanStats,
+    /// Whether runtime enrich can be offered at all for this project.
+    #[serde(default)]
+    pub enrichable: bool,
+    /// Present once runtime enrich has run on this scan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enrich: Option<EnrichReport>,
 }
 
 impl ProjectScan {
-    fn from_result(result: &ScanResult) -> ProjectScan {
+    fn from_result(result: &ScanResult, enrich: Option<EnrichReport>) -> ProjectScan {
         ProjectScan {
             frameworks: result.frameworks.clone(),
             endpoints: result.endpoints.iter().map(to_view).collect(),
             base_urls: result.base_urls.clone(),
             warnings: result.warnings.clone(),
             stats: result.stats,
+            enrichable: is_enrichable(result),
+            enrich,
         }
     }
+}
+
+/// Frameworks the helper can ask. Next.js and Express have no runtime spec to fetch.
+const ENRICHABLE_FRAMEWORKS: &[&str] = &["fastapi", "flask"];
+
+fn is_enrichable(result: &ScanResult) -> bool {
+    result
+        .frameworks
+        .iter()
+        .any(|f| ENRICHABLE_FRAMEWORKS.contains(&f.id.as_str()))
+}
+
+/// What the consent dialog shows before anything runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnrichProposal {
+    /// Candidate application objects, best first.
+    pub targets: Vec<AppTarget>,
+    /// Candidate interpreters, best first.
+    pub interpreters: Vec<Interpreter>,
+    /// The target recorded in `workspace.yaml` from an earlier consent, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remembered_target: Option<String>,
+    /// The command line for the default choice, or none when a part is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Where the helper script is (or will be) written, so it can be read first.
+    pub helper_path: PathBuf,
 }
 
 fn to_view(spec: &rl_model::EndpointSpec) -> EndpointView {
@@ -147,6 +206,7 @@ fn to_view(spec: &rl_model::EndpointSpec) -> EndpointView {
         auth: spec.auth.is_some(),
         has_body: spec.body.is_some(),
         query: spec.query_params.iter().map(|p| p.name.clone()).collect(),
+        enrich: Provenance::of(spec).map(|p| p.as_str().to_string()),
     }
 }
 
@@ -158,6 +218,8 @@ pub struct RouteLens {
     engine: HttpEngine,
     /// Kept so the UI can open an endpoint by id without rescanning.
     last_scan: Option<ScanResult>,
+    /// The last runtime-enrich report, cleared by a rescan.
+    last_enrich: Option<EnrichReport>,
 }
 
 impl RouteLens {
@@ -235,6 +297,10 @@ impl RouteLens {
 
     fn workspace(&self) -> Result<&Workspace> {
         self.workspace.as_ref().ok_or(CoreError::NoWorkspace)
+    }
+
+    fn workspace_mut(&mut self) -> Result<&mut Workspace> {
+        self.workspace.as_mut().ok_or(CoreError::NoWorkspace)
     }
 
     pub fn info(&self) -> Result<WorkspaceInfo> {
@@ -406,14 +472,197 @@ impl RouteLens {
             }
         }
 
-        let view = ProjectScan::from_result(&result);
+        let view = ProjectScan::from_result(&result, None);
         self.last_scan = Some(result);
+        self.last_enrich = None;
         Ok(view)
     }
 
     /// The most recent scan, if one has been run.
     pub fn last_scan(&self) -> Option<&ScanResult> {
         self.last_scan.as_ref()
+    }
+
+    // --- runtime enrich -----------------------------------------------------------------
+
+    /// What running runtime enrich *would* do. Executes nothing, writes nothing.
+    ///
+    /// The result is the consent dialog's content: every candidate target and interpreter,
+    /// with the reason each was suggested, and the exact command line for the default pair.
+    pub fn enrich_proposal(&self) -> Result<EnrichProposal> {
+        let workspace = self.workspace()?;
+        let scan = self.last_scan.as_ref().ok_or(CoreError::NoScan)?;
+        if !is_enrichable(scan) {
+            return Err(CoreError::NotEnrichable {
+                frameworks: describe_frameworks(scan),
+            });
+        }
+
+        let root = workspace.layout().root().to_path_buf();
+        let project = ProjectContext::scan(&root)?;
+        let candidates = enrich::candidates(&project, &scan.app_roots);
+
+        let remembered_target = workspace
+            .manifest()
+            .project
+            .as_ref()
+            .and_then(|p| p.app_target.clone());
+        let helper_dir = workspace.layout().local_dir();
+
+        // The remembered target leads, then the best inferred one.
+        let target = remembered_target
+            .as_ref()
+            .map(|t| self.target_named(t, &candidates.targets))
+            .or_else(|| candidates.targets.first().cloned());
+        let command = match (target, candidates.interpreters.first()) {
+            (Some(target), Some(interpreter)) => {
+                Some(enrich::plan(&root, &helper_dir, interpreter.clone(), target).command_line())
+            }
+            _ => None,
+        };
+
+        Ok(EnrichProposal {
+            targets: candidates.targets,
+            interpreters: candidates.interpreters,
+            remembered_target,
+            command,
+            helper_path: helper_dir.join(enrich::HELPER_FILE_NAME),
+        })
+    }
+
+    /// A target by its spelling, falling back to a hand-typed one at the project root.
+    fn target_named(&self, spelling: &str, known: &[AppTarget]) -> AppTarget {
+        known
+            .iter()
+            .find(|t| t.target == spelling)
+            .cloned()
+            .unwrap_or_else(|| AppTarget {
+                target: spelling.to_string(),
+                cwd: PathBuf::from("."),
+                source: "entered by hand".to_string(),
+                confidence: 10,
+            })
+    }
+
+    /// The exact command line a given choice would run — for the consent dialog to show
+    /// as the developer changes the target or interpreter. Executes nothing.
+    pub fn enrich_command(&self, target: &str, interpreter: Option<&Path>) -> Result<String> {
+        let proposal = self.enrich_proposal()?;
+        let target = self.target_named(target, &proposal.targets);
+        let interpreter = match interpreter {
+            Some(path) => Interpreter {
+                path: path.to_path_buf(),
+                source: "chosen".to_string(),
+            },
+            None => proposal
+                .interpreters
+                .first()
+                .cloned()
+                .ok_or(rl_discovery::EnrichError::NoInterpreter)?,
+        };
+        let workspace = self.workspace()?;
+        let root = workspace.layout().root().to_path_buf();
+        Ok(
+            enrich::plan(&root, &workspace.layout().local_dir(), interpreter, target)
+                .command_line(),
+        )
+    }
+
+    /// Run runtime enrich. **This executes the project's code.**
+    ///
+    /// The caller must have shown [`RouteLens::enrich_proposal`] and been told yes; the
+    /// target is then recorded in `workspace.yaml` as the standing consent, which
+    /// [`RouteLens::revoke_enrich`] withdraws. The static scan is merged with the result
+    /// and becomes the scan the UI works from — source locations included.
+    pub fn run_enrich(&mut self, target: &str, interpreter: Option<&Path>) -> Result<ProjectScan> {
+        let proposal = self.enrich_proposal()?;
+        let target = self.target_named(target, &proposal.targets);
+        let interpreter = match interpreter {
+            Some(path) => Interpreter {
+                path: path.to_path_buf(),
+                source: "chosen".to_string(),
+            },
+            None => proposal
+                .interpreters
+                .first()
+                .cloned()
+                .ok_or(rl_discovery::EnrichError::NoInterpreter)?,
+        };
+
+        // Consent is recorded *before* running, so a run that hangs and gets killed still
+        // leaves the decision on disk — and so the dialog next time shows what was agreed.
+        {
+            let workspace = self.workspace_mut()?;
+            if let Some(project) = workspace.manifest_mut().project.as_mut() {
+                if project.app_target.as_deref() != Some(&target.target) {
+                    project.app_target = Some(target.target.clone());
+                    workspace.save()?;
+                }
+            }
+        }
+
+        let workspace = self.workspace()?;
+        let root = workspace.layout().root().to_path_buf();
+        let plan = enrich::plan(&root, &workspace.layout().local_dir(), interpreter, target);
+        let output = enrich::run(&plan, enrich::DEFAULT_TIMEOUT)?;
+
+        let imported = rl_import::parse_openapi_value(&output.openapi)?;
+        let runtime: Vec<EndpointSpec> = imported
+            .value
+            .endpoints
+            .into_iter()
+            .map(|mut spec| {
+                spec.origin = Origin::Runtime {
+                    framework: output.framework.clone(),
+                };
+                spec.confidence = Confidence::High;
+                spec
+            })
+            .collect();
+
+        let scan = self.last_scan.as_mut().ok_or(CoreError::NoScan)?;
+        let static_specs = std::mem::take(&mut scan.endpoints);
+        let (merged, report) = enrich::merge::merge(static_specs, runtime);
+        scan.endpoints = merged;
+        scan.stats.endpoints_found = scan.endpoints.len();
+        scan.stats.unresolved = scan
+            .endpoints
+            .iter()
+            .filter(|e| !e.path.is_resolved())
+            .count();
+
+        let report = EnrichReport {
+            framework: output.framework,
+            target: plan.target.target.clone(),
+            interpreter: plan.interpreter.path.clone(),
+            command: plan.command_line(),
+            matched: report.matched,
+            runtime_only: report.runtime_only,
+            static_only: report.static_only,
+            gaps_filled: report.gaps_filled,
+            duration_ms: output.duration.as_millis() as u64,
+            stderr: output.stderr,
+            warnings: imported.warnings,
+        };
+        let view = ProjectScan::from_result(scan, Some(report.clone()));
+        self.last_enrich = Some(report);
+        Ok(view)
+    }
+
+    /// Withdraw the standing consent: forget the target. The next run asks again.
+    pub fn revoke_enrich(&mut self) -> Result<()> {
+        let workspace = self.workspace_mut()?;
+        if let Some(project) = workspace.manifest_mut().project.as_mut() {
+            if project.app_target.take().is_some() {
+                workspace.save()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The last enrich report, if the current scan has been enriched.
+    pub fn last_enrich(&self) -> Option<&EnrichReport> {
+        self.last_enrich.as_ref()
     }
 
     /// Turn a discovered endpoint into an editable request.
@@ -564,6 +813,18 @@ impl RouteLens {
 
         self.workspace()?.save_collection(&collection)?;
         Ok(imported)
+    }
+}
+
+fn describe_frameworks(scan: &ScanResult) -> String {
+    if scan.frameworks.is_empty() {
+        "not a recognised framework".to_string()
+    } else {
+        scan.frameworks
+            .iter()
+            .map(|f| f.id.as_str())
+            .collect::<Vec<_>>()
+            .join(" + ")
     }
 }
 
@@ -1007,5 +1268,185 @@ mod tests {
 
         app.set_secret("api_token", "s3cr3t").unwrap();
         assert!(app.info().unwrap().missing_secrets.is_empty());
+    }
+
+    /// A working copy of a fixture project, so the workspace files land in a temp dir.
+    fn fixture_copy(name: &str) -> TempDir {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .join(name);
+        let dir = TempDir::new().unwrap();
+        copy_tree(&source, dir.path());
+        dir
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                if entry.file_name() == "__pycache__" || entry.file_name() == ".routelens" {
+                    continue;
+                }
+                std::fs::create_dir_all(&target).unwrap();
+                copy_tree(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn an_enrich_proposal_runs_nothing_and_names_everything() {
+        let dir = fixture_copy("flask");
+        let mut app = RouteLens::new();
+        app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
+            .unwrap();
+
+        assert!(matches!(app.enrich_proposal(), Err(CoreError::NoScan)));
+        let scan = app.scan().unwrap();
+        assert!(scan.enrichable);
+        assert!(scan.enrich.is_none());
+
+        let proposal = app.enrich_proposal().unwrap();
+        let targets: Vec<&str> = proposal.targets.iter().map(|t| t.target.as_str()).collect();
+        assert_eq!(
+            targets,
+            vec!["app", "app:create_app()"],
+            "the Procfile's `flask --app app`, then the factory the scan saw"
+        );
+        assert!(proposal.remembered_target.is_none());
+        assert!(
+            !proposal.helper_path.exists(),
+            "proposing must not write the helper"
+        );
+        assert!(
+            app.info().unwrap().name == "flask",
+            "and must not touch the workspace"
+        );
+    }
+
+    #[test]
+    fn enrich_is_refused_for_a_framework_with_no_runtime_spec() {
+        let dir = fixture_copy("express");
+        let mut app = RouteLens::new();
+        app.create_workspace(dir.path(), "express", WorkspaceKind::Project)
+            .unwrap();
+        let scan = app.scan().unwrap();
+        assert!(!scan.enrichable);
+        assert!(matches!(
+            app.enrich_proposal(),
+            Err(CoreError::NotEnrichable { .. })
+        ));
+    }
+
+    /// The whole loop against the Flask fixture, when a Python with Flask is available
+    /// (`ROUTELENS_TEST_PYTHON`, or a detected interpreter that can import it).
+    #[test]
+    fn enrich_merges_runtime_truth_onto_static_locations_and_records_consent() {
+        let Some(python) = python_with("flask") else {
+            eprintln!("skipping: no Python with flask importable");
+            return;
+        };
+        let dir = fixture_copy("flask");
+        let mut app = RouteLens::new();
+        app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
+            .unwrap();
+        let before = app.scan().unwrap();
+        let static_unresolved = before.endpoints.iter().filter(|e| e.unresolved).count();
+        assert_eq!(
+            static_unresolved, 4,
+            "3 admin routes + the loop registration"
+        );
+
+        let after = app.run_enrich("app:create_app()", Some(&python)).unwrap();
+        let report = after.enrich.as_ref().expect("a report");
+        assert_eq!(report.framework, "flask");
+        assert_eq!(
+            report.gaps_filled, 3,
+            "the three /admin routes learn their prefix"
+        );
+        let runtime_only: Vec<&str> = after
+            .endpoints
+            .iter()
+            .filter(|e| e.enrich.as_deref() == Some("runtime_only"))
+            .map(|e| e.display.as_str())
+            .collect();
+        assert_eq!(
+            runtime_only,
+            vec!["GET /dyn/gadgets", "GET /dyn/widgets"],
+            "{report:?}"
+        );
+        assert!(report.matched >= 15, "{report:?}");
+        assert!(report.command.contains("routelens_enrich.py"));
+
+        // The gap closed, and the source location survived the merge.
+        let stats = after
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/admin/stats")
+            .expect("resolved by runtime");
+        assert_eq!(stats.enrich.as_deref(), Some("gap_filled"));
+        assert_eq!(stats.source.as_ref().unwrap().file, "app/api/admin.py");
+        assert!(!stats.unresolved);
+
+        // Runtime-only routes have no source, and say so.
+        let widgets = after
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/dyn/widgets")
+            .unwrap();
+        assert!(widgets.source.is_none());
+        assert_eq!(widgets.enrich.as_deref(), Some("runtime_only"));
+
+        // The orphan was not served, and is still listed.
+        let orphan = after
+            .endpoints
+            .iter()
+            .find(|e| e.path == "/orphan/forgotten")
+            .unwrap();
+        assert_eq!(orphan.enrich.as_deref(), Some("static_only"));
+
+        // The enriched endpoint opens as a request like any other.
+        let draft = app.request_for(&stats.id, None).unwrap();
+        assert_eq!(draft.url, "{{base_url}}/admin/stats");
+
+        // Consent was recorded, and can be withdrawn.
+        assert_eq!(
+            app.enrich_proposal().unwrap().remembered_target.as_deref(),
+            Some("app:create_app()")
+        );
+        let manifest =
+            std::fs::read_to_string(dir.path().join(".routelens/workspace.yaml")).unwrap();
+        assert!(
+            manifest.contains("app_target: app:create_app()"),
+            "{manifest}"
+        );
+        app.revoke_enrich().unwrap();
+        assert!(app.enrich_proposal().unwrap().remembered_target.is_none());
+
+        // A rescan drops the enrichment; static is the default again.
+        let again = app.scan().unwrap();
+        assert!(again.enrich.is_none());
+        assert!(again.endpoints.iter().all(|e| e.enrich.is_none()));
+    }
+
+    fn python_with(module: &str) -> Option<PathBuf> {
+        let candidates: Vec<PathBuf> = std::env::var_os("ROUTELENS_TEST_PYTHON")
+            .map(|p| vec![PathBuf::from(p)])
+            .unwrap_or_else(|| {
+                rl_discovery::enrich::interpreter::detect(Path::new("."))
+                    .into_iter()
+                    .map(|i| i.path)
+                    .collect()
+            });
+        candidates.into_iter().find(|python| {
+            std::process::Command::new(python)
+                .args(["-c", &format!("import {module}")])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        })
     }
 }

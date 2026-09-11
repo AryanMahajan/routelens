@@ -43,12 +43,29 @@ pub struct ScanStats {
     pub unresolved: usize,
 }
 
+/// An application object found in source: `app = FastAPI()` in `app/main.py`.
+///
+/// What runtime enrich imports. Recorded by the static scan so the target can be inferred
+/// without a second pass over the code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppRoot {
+    pub framework: String,
+    /// Relative to the project root.
+    pub module: PathBuf,
+    pub name: String,
+    /// The factory function it is created inside, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub factory: Option<String>,
+}
+
 /// Everything one scan produced.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub root: PathBuf,
     pub frameworks: Vec<DetectedFramework>,
     pub endpoints: Vec<EndpointSpec>,
+    #[serde(default)]
+    pub app_roots: Vec<AppRoot>,
     pub base_urls: Vec<BaseUrlCandidate>,
     /// Gaps and oddities, in words fit to show a developer.
     pub warnings: Vec<String>,
@@ -80,6 +97,7 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
 
     let mut frameworks = Vec::new();
     let mut endpoints = Vec::new();
+    let mut app_roots = Vec::new();
     let mut stats = ScanStats {
         files_seen: project.files().len(),
         ..ScanStats::default()
@@ -114,6 +132,12 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
 
         let graph = RegistrationGraph::build(sink, &known);
         stats.routers_found += graph.router_count();
+        app_roots.extend(graph.app_roots().map(|r| AppRoot {
+            framework: adapter.id().to_string(),
+            module: r.symbol.module.clone(),
+            name: r.symbol.name.clone(),
+            factory: r.factory.clone(),
+        }));
 
         let resolution = graph.resolve();
         for warning in &resolution.warnings {
@@ -146,6 +170,7 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
         root: project.root().to_path_buf(),
         frameworks,
         endpoints,
+        app_roots,
         base_urls,
         warnings,
         stats,

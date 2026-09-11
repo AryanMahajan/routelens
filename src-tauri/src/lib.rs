@@ -7,7 +7,7 @@
 //! `cargo test`, with no GUI harness in the loop. If a command in this file starts making
 //! decisions, the decision belongs in `rl-core` instead.
 
-use rl_core::{ProjectScan, RouteLens, WorkspaceInfo};
+use rl_core::{EnrichProposal, ProjectScan, RouteLens, WorkspaceInfo};
 use rl_http::Exchange;
 use rl_model::RequestDraft;
 use rl_workspace::{Collection, Environment, HistoryEntry, WorkspaceKind};
@@ -187,6 +187,48 @@ async fn open_endpoint(
         .request_for(&id, base_url.as_deref())?)
 }
 
+// --- runtime enrich ------------------------------------------------------------------------
+//
+// The only commands that can execute project code. `enrich_proposal` and `enrich_command`
+// run nothing; `run_enrich` runs exactly what the UI showed. See `docs/security.md`.
+
+#[tauri::command]
+async fn enrich_proposal(state: State<'_, AppState>) -> CommandResult<EnrichProposal> {
+    Ok(state.app.lock().await.enrich_proposal()?)
+}
+
+#[tauri::command]
+async fn enrich_command(
+    state: State<'_, AppState>,
+    target: String,
+    interpreter: Option<PathBuf>,
+) -> CommandResult<String> {
+    Ok(state
+        .app
+        .lock()
+        .await
+        .enrich_command(&target, interpreter.as_deref())?)
+}
+
+/// Executes the project's code. The UI shows the exact command and asks first.
+#[tauri::command]
+async fn run_enrich(
+    state: State<'_, AppState>,
+    target: String,
+    interpreter: Option<PathBuf>,
+) -> CommandResult<ProjectScan> {
+    Ok(state
+        .app
+        .lock()
+        .await
+        .run_enrich(&target, interpreter.as_deref())?)
+}
+
+#[tauri::command]
+async fn revoke_enrich(state: State<'_, AppState>) -> CommandResult<()> {
+    Ok(state.app.lock().await.revoke_enrich()?)
+}
+
 /// Jump to where an endpoint is defined.
 #[tauri::command]
 async fn reveal_in_editor(
@@ -309,6 +351,10 @@ pub fn run() {
             save_request,
             scan_project,
             open_endpoint,
+            enrich_proposal,
+            enrich_command,
+            run_enrich,
+            revoke_enrich,
             reveal_in_editor,
             send_request,
             history,

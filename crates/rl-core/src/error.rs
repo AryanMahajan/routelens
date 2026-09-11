@@ -39,6 +39,13 @@ pub enum CoreError {
     Discovery(#[from] rl_discovery::DiscoveryError),
 
     #[error(transparent)]
+    Enrich(#[from] rl_discovery::EnrichError),
+
+    /// Runtime enrich asks the application; there has to be one to ask.
+    #[error("runtime enrich needs a FastAPI or Flask project; this one is {frameworks}")]
+    NotEnrichable { frameworks: String },
+
+    #[error(transparent)]
     Http(#[from] rl_http::HttpError),
 
     #[error(transparent)]
