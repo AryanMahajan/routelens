@@ -1,26 +1,22 @@
 # Getting started
 
-> **Not yet installable.** RouteLens is pre-alpha; this document describes the intended first
-> run so the design can be reviewed before it is built. Steps marked *(planned)* do not work
-> yet.
+> **Pre-alpha.** There are no release builds yet; run it from source. Steps marked
+> *(planned)* do not work yet.
 
-## Install *(planned)*
-
-Download the desktop application for your platform from the releases page, or build from
-source:
+## Run from source
 
 ```bash
-git clone <repo-url> routelens
+git clone https://github.com/AryanMahajan/routelens.git
 cd routelens
 npm install --prefix ui
-npm run tauri build
+npm run tauri dev --prefix ui      # development build, hot-reloading UI
+npm run tauri build --prefix ui    # installer / bundle *(untested so far)*
 ```
 
-Development build:
-
-```bash
-npm run tauri dev
-```
+The first `dev` compiles the Rust side, which takes a few minutes; afterwards it is seconds.
+The sample projects under `tests/fixtures/` — `fastapi`, `nextjs`, `express` — are the
+quickest things to open: each contains routes that should be found, deliberate gaps that
+should be *shown* rather than guessed, and an unmounted router that should be flagged.
 
 Requires a recent stable Rust toolchain and Node 20+. Tauri also needs platform
 prerequisites — WebView2 on Windows, `webkit2gtk` on Linux, Xcode command line tools on macOS.
