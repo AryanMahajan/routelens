@@ -15,12 +15,15 @@ export function Explorer({
   scanning,
   onScan,
   onEnrich,
+  onSaveAll,
   onOpenEndpoint,
 }: {
   scan: ScanResult | null;
   scanning: boolean;
   onScan: () => void;
   onEnrich: () => void;
+  /** Save every resolved endpoint as one collection, filed by group. */
+  onSaveAll: () => void;
   onOpenEndpoint: (endpoint: EndpointSpec) => void;
 }) {
   const [filter, setFilter] = useState("");
@@ -99,6 +102,16 @@ export function Explorer({
               ` · ${scan.frameworks.map((f) => f.id).join(" + ")}`}
           </span>
           <span className="flex shrink-0 items-center gap-2">
+            {scan.endpoints.some((e) => !e.unresolved) && (
+              <button
+                onClick={onSaveAll}
+                disabled={scanning}
+                title="Save every resolved endpoint into a collection, one folder per group"
+                className="transition hover:text-ink"
+              >
+                Save all
+              </button>
+            )}
             {scan.enrichable && (
               <button
                 onClick={onEnrich}

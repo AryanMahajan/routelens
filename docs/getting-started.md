@@ -50,6 +50,15 @@ Selecting an endpoint shows everything discovery could establish:
 Where discovery could not establish something, the UI says so. An unresolvable path segment
 appears as `?` with the source expression, rather than a guess.
 
+## Save the whole API as a collection
+
+**Save all** in the API panel writes every resolved endpoint into one collection, one
+folder per group (router, blueprint, tag or app), and switches to **Collections** to show
+it. Endpoints with an unresolved path are skipped and counted rather than written as
+`/?/stats`. Run it again after a rescan and it updates the discovered requests in place —
+matched by the endpoint they came from — while leaving your own edits, folders and
+hand-added requests alone.
+
 ## Ask the application (FastAPI, Flask and Django)
 
 Static analysis stops where the code needs running: a prefix from `settings.API_PREFIX`,

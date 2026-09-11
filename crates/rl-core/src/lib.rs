@@ -166,6 +166,14 @@ fn is_enrichable(result: &ScanResult) -> bool {
         .any(|f| ENRICHABLE_FRAMEWORKS.contains(&f.id.as_str()))
 }
 
+/// What [`RouteLens::save_scan_as_collection`] did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SaveAllReport {
+    pub added: usize,
+    pub updated: usize,
+    pub skipped_unresolved: usize,
+}
+
 /// What the consent dialog shows before anything runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnrichProposal {
@@ -734,6 +742,53 @@ impl RouteLens {
         Ok(draft)
     }
 
+    /// Save every resolved endpoint of the last scan into one collection, filed under
+    /// folders by group — the whole API as a committed, editable set of requests.
+    ///
+    /// Re-running it onto the same collection updates the requests that came from
+    /// discovery (matched by `spec_ref`) and leaves hand-made ones alone. Endpoints whose
+    /// path never resolved are skipped and counted, not written as `/?/stats`.
+    pub fn save_scan_as_collection(&self, collection_name: &str) -> Result<SaveAllReport> {
+        let workspace = self.workspace()?;
+        let scan = self.last_scan.as_ref().ok_or(CoreError::NoScan)?;
+
+        let mut collection = workspace
+            .load_collection(collection_name)
+            .unwrap_or_else(|_| Collection::new(collection_name));
+        let mut report = SaveAllReport::default();
+
+        for spec in &scan.endpoints {
+            if !spec.path.is_resolved() {
+                report.skipped_unresolved += 1;
+                continue;
+            }
+            let mut draft = RequestDraft::from_spec(spec, "{{base_url}}");
+            draft.name = Some(spec.summary.clone().unwrap_or_else(|| spec.display()));
+            draft.folder = spec.group.clone();
+
+            match collection
+                .requests
+                .iter()
+                .position(|r| r.spec_ref.as_ref() == Some(&spec.id))
+            {
+                Some(index) => {
+                    // Keep the id (open tabs point at it) and any folder the person chose.
+                    draft.id = collection.requests[index].id.clone();
+                    draft.folder = collection.requests[index].folder.clone().or(draft.folder);
+                    collection.requests[index] = draft;
+                    report.updated += 1;
+                }
+                None => {
+                    collection.push(draft);
+                    report.added += 1;
+                }
+            }
+        }
+
+        workspace.save_collection(&collection)?;
+        Ok(report)
+    }
+
     /// Open a discovered endpoint's definition in the developer's editor.
     ///
     /// The path is resolved against the workspace root and checked to be inside it, because
@@ -1060,6 +1115,54 @@ mod tests {
         assert_eq!(collection.len(), 1, "a rename must not duplicate");
         assert_eq!(collection.requests[0].name.as_deref(), Some("Fetch a"));
         assert_eq!(collection.requests[0].folder.as_deref(), Some("Admin"));
+    }
+
+    #[test]
+    fn the_whole_scan_saves_as_a_collection_filed_by_group() {
+        let dir = fixture_copy("flask");
+        let mut app = RouteLens::new();
+        app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
+            .unwrap();
+        assert!(matches!(
+            app.save_scan_as_collection("API"),
+            Err(CoreError::NoScan)
+        ));
+        app.scan().unwrap();
+
+        let report = app.save_scan_as_collection("API").unwrap();
+        assert_eq!(
+            report.skipped_unresolved, 4,
+            "gaps are not written as /?/stats"
+        );
+        assert_eq!(report.updated, 0);
+        assert!(report.added >= 15);
+
+        let collection = app.load_collection("API").unwrap();
+        let users = collection
+            .requests
+            .iter()
+            .find(|r| r.url == "{{base_url}}/api/v1/users/" && r.method == HttpMethod::Post)
+            .expect("the create-user endpoint");
+        assert_eq!(users.folder.as_deref(), Some("users"));
+        assert!(users.spec_ref.is_some());
+        assert_eq!(users.name.as_deref(), Some("Create a user."));
+
+        // Saving again updates in place: same count, same ids, a moved folder kept.
+        let first_id = users.id.clone();
+        let mut edited = collection.clone();
+        for r in &mut edited.requests {
+            if r.id == first_id {
+                r.folder = Some("Mine".into());
+            }
+        }
+        app.save_collection(&edited).unwrap();
+        let again = app.save_scan_as_collection("API").unwrap();
+        assert_eq!(again.added, 0);
+        assert_eq!(again.updated, report.added);
+        let after = app.load_collection("API").unwrap();
+        assert_eq!(after.len(), collection.len());
+        let same = after.requests.iter().find(|r| r.id == first_id).unwrap();
+        assert_eq!(same.folder.as_deref(), Some("Mine"));
     }
 
     #[test]

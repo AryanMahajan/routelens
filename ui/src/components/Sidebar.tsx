@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, CoreError } from "../api";
 import { applyTheme, currentTheme, type Theme } from "../theme";
 import type {
   Collection,
@@ -50,6 +50,27 @@ export function Sidebar({
   const [collections, setCollections] = useState<Collection[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [theme, setTheme] = useState<Theme>(currentTheme);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /** The whole discovered API into one collection, then show it where it landed. */
+  async function saveAll() {
+    if (!workspace) return;
+    const name = window.prompt("Save all endpoints into collection", workspace.name)?.trim();
+    if (!name) return;
+    try {
+      const report = await api.saveScanAsCollection(name);
+      const parts = [
+        report.added > 0 && `${report.added} added`,
+        report.updated > 0 && `${report.updated} updated`,
+        report.skipped_unresolved > 0 && `${report.skipped_unresolved} unresolved skipped`,
+      ].filter(Boolean);
+      setNotice(`Saved to "${name}": ${parts.join(", ") || "nothing to save"}.`);
+      onChanged();
+      setPanel("collections");
+    } catch (e) {
+      setNotice(e instanceof CoreError ? e.message : String(e));
+    }
+  }
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -173,6 +194,7 @@ export function Sidebar({
               scanning={scanning}
               onScan={onScan}
               onEnrich={onEnrich}
+              onSaveAll={saveAll}
               onOpenEndpoint={onOpenEndpoint}
             />
           ) : (
@@ -184,6 +206,15 @@ export function Sidebar({
           ))}
 
         {panel !== "api" && <div className="min-h-0 flex-1 overflow-auto p-2">
+        {notice && panel === "collections" && (
+          <p
+            onClick={() => setNotice(null)}
+            className="mx-1 mb-2 cursor-pointer rounded border border-accent/30 bg-accent/5 px-2 py-1 text-[11px] text-muted"
+            title="Dismiss"
+          >
+            {notice}
+          </p>
+        )}
         {panel === "collections" &&
           (workspace ? (
             <Collections

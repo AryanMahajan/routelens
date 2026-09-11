@@ -10,6 +10,7 @@ import {
   normalizeRequest,
   type Collection,
   type EnrichProposal,
+  type SaveAllReport,
   type ScanResult,
   type Environment,
   type Exchange,
@@ -83,6 +84,8 @@ export const api = {
 
   // --- discovery (reads source; never executes it) ---
   scanProject: async () => normalizeScan(await call<ScanResult>("scan_project")),
+  saveScanAsCollection: (name: string) =>
+    call<SaveAllReport>("save_scan_as_collection", { name }),
 
   // --- runtime enrich (the one path that executes project code — after consent) ---
   enrichProposal: () => call<EnrichProposal>("enrich_proposal"),

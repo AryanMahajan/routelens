@@ -7,7 +7,7 @@
 //! `cargo test`, with no GUI harness in the loop. If a command in this file starts making
 //! decisions, the decision belongs in `rl-core` instead.
 
-use rl_core::{EnrichProposal, ProjectScan, RouteLens, WorkspaceInfo};
+use rl_core::{EnrichProposal, ProjectScan, RouteLens, SaveAllReport, WorkspaceInfo};
 use rl_http::Exchange;
 use rl_model::RequestDraft;
 use rl_workspace::{Collection, Environment, HistoryEntry, WorkspaceKind};
@@ -193,6 +193,15 @@ async fn scan_project(state: State<'_, AppState>) -> CommandResult<ProjectScan> 
     Ok(state.app.lock().await.scan()?)
 }
 
+/// Every resolved endpoint of the last scan, as one collection filed by group.
+#[tauri::command]
+async fn save_scan_as_collection(
+    state: State<'_, AppState>,
+    name: String,
+) -> CommandResult<SaveAllReport> {
+    Ok(state.app.lock().await.save_scan_as_collection(&name)?)
+}
+
 #[tauri::command]
 async fn open_endpoint(
     state: State<'_, AppState>,
@@ -372,6 +381,7 @@ pub fn run() {
             rename_collection,
             save_request,
             scan_project,
+            save_scan_as_collection,
             open_endpoint,
             enrich_proposal,
             enrich_command,

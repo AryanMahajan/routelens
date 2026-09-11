@@ -323,6 +323,13 @@ export interface ScanResult {
   enrich: EnrichReport | null;
 }
 
+/** What "Save all as collection" did. */
+export interface SaveAllReport {
+  added: number;
+  updated: number;
+  skipped_unresolved: number;
+}
+
 /** What one runtime-enrich run did. */
 export interface EnrichReport {
   framework: string;
