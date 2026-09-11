@@ -269,9 +269,8 @@ impl RequestDraft {
     /// Build a draft from a discovered endpoint.
     ///
     /// The base URL is prepended and the path is rendered in `{brace}` form, leaving
-    /// placeholders for the caller to fill. Known query parameters are seeded as rows —
-    /// required ones enabled, optional ones present but switched off, so the whole surface of
-    /// the endpoint is visible without cluttering the request that actually gets sent.
+    /// placeholders for the caller to fill. Known query parameters and headers are seeded as
+    /// enabled rows, so what discovery found is what gets sent; untick one to leave it out.
     pub fn from_spec(spec: &EndpointSpec, base_url: &str) -> Self {
         let path = spec.path.render(ParamStyle::Braces);
         let url = format!("{}{}", base_url.trim_end_matches('/'), path);
@@ -298,7 +297,7 @@ impl RequestDraft {
                 KeyValue {
                     key: p.name.clone(),
                     value,
-                    enabled: p.required,
+                    enabled: true,
                     description: p.description.clone(),
                 }
             })
@@ -310,7 +309,7 @@ impl RequestDraft {
             .map(|p| KeyValue {
                 key: p.name.clone(),
                 value: String::new(),
-                enabled: p.required,
+                enabled: true,
                 description: p.description.clone(),
             })
             .collect();
@@ -539,12 +538,15 @@ mod tests {
     }
 
     #[test]
-    fn optional_query_params_are_present_but_switched_off() {
+    fn discovered_query_params_start_enabled() {
         let draft = RequestDraft::from_spec(&spec(), "http://x");
         let page = draft.query.iter().find(|q| q.key == "page").unwrap();
         let search = draft.query.iter().find(|q| q.key == "search").unwrap();
-        assert!(page.enabled, "required params start enabled");
-        assert!(!search.enabled, "optional params start disabled");
+        assert!(page.enabled);
+        assert!(
+            search.enabled,
+            "optional ones too — untick to drop, rather than tick to add"
+        );
     }
 
     #[test]
