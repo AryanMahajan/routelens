@@ -1,9 +1,0 @@
-# Written automatically by RouteLens.
-#
-# The private and disposable storage tiers live in local/: secret values,
-# request history, and the rebuildable source index. None of it belongs in
-# version control.
-#
-# The files beside this one -- workspace.yaml, collections/, environments/ --
-# are meant to be committed. They contain secret *names* only, never values.
-local/
