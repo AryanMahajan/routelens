@@ -1,0 +1,181 @@
+{
+  "frameworks": [
+    "django"
+  ],
+  "base_url": "http://localhost:8001",
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/notes/{pk}/",
+      "group": "api",
+      "source": "api/views.py:79"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{pk}/",
+      "group": "users",
+      "source": "api/views.py:113"
+    },
+    {
+      "method": "GET",
+      "path": "/?/stats/",
+      "group": "api",
+      "source": "api/views.py:58",
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/files/{filename}",
+      "group": "api",
+      "source": "api/views.py:50"
+    },
+    {
+      "method": "GET",
+      "path": "/api/items/",
+      "group": "api",
+      "source": "api/views.py:32",
+      "query": [
+        "limit"
+      ],
+      "has_body": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/items/{pk}/",
+      "group": "api",
+      "source": "api/views.py:43"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/",
+      "group": "api",
+      "source": "api/views.py:65",
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/{pk}/",
+      "group": "api",
+      "source": "api/views.py:79"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags/",
+      "group": "tags",
+      "source": "api/views.py:126"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags/{slug}/",
+      "group": "tags",
+      "source": "api/views.py:133"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/",
+      "group": "users",
+      "source": "api/views.py:94",
+      "query": [
+        "q"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/recent/",
+      "group": "users",
+      "source": "api/views.py:121"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/{pk}/",
+      "group": "users",
+      "source": "api/views.py:99"
+    },
+    {
+      "method": "GET",
+      "path": "/health/",
+      "source": "api/views.py:22"
+    },
+    {
+      "method": "GET",
+      "path": "/legacy/forgotten/",
+      "group": "legacy",
+      "source": "api/views.py:22",
+      "orphaned": true
+    },
+    {
+      "method": "GET",
+      "path": "/legacy/ping/",
+      "source": "api/views.py:27"
+    },
+    {
+      "method": "GET",
+      "path": "/reports/{year}/",
+      "source": "api/views.py:22"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/notes/{pk}/",
+      "group": "api",
+      "source": "api/views.py:79",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/items/",
+      "group": "api",
+      "source": "api/views.py:32",
+      "query": [
+        "limit"
+      ],
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes/",
+      "group": "api",
+      "source": "api/views.py:65",
+      "has_body": true,
+      "has_auth": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users/",
+      "group": "users",
+      "source": "api/views.py:105",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users/{pk}/set-password/",
+      "group": "users",
+      "source": "api/views.py:117",
+      "has_body": true,
+      "has_auth": true
+    },
+    {
+      "method": "PUT",
+      "path": "/api/notes/{pk}/",
+      "group": "api",
+      "source": "api/views.py:79",
+      "has_body": true
+    }
+  ],
+  "warnings": [
+    "router `legacy/urls.py:urlpatterns` is never mounted"
+  ],
+  "expected_misses": [
+    {
+      "path": "/api/reports/daily/",
+      "reason": "built by a list comprehension in api/urls.py; the elements are not path() calls the adapter can read. Runtime enrich lists both reports exactly."
+    },
+    {
+      "path": "/internal/stats/",
+      "reason": "the prefix is settings.INTERNAL_PREFIX, an environment variable; shown as `/?/stats/`, never guessed."
+    },
+    {
+      "path": "/api/v1/",
+      "reason": "DefaultRouter's API root view and its `.<format>` suffix variants are framework furniture, not the project's API; runtime enrich drops them too."
+    }
+  ]
+}

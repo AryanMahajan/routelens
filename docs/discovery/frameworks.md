@@ -10,7 +10,7 @@ whose snapshot records what is found **and what is expected not to be**.
 | Next.js | TS/JS | P4 | Implemented |
 | Express | JS/TS | P4 | Implemented |
 | Flask | Python | P5 | Implemented |
-| Django / DRF | Python | P6 | Planned |
+| Django / DRF | Python | P6 | Implemented |
 
 Every adapter shares the same limits, which come from static analysis itself rather than
 from any one framework:
@@ -212,23 +212,64 @@ including the loop-registered and config-prefixed ones above. See
 
 ## Django / DRF
 
-**Detected by** `manage.py`, `django` in the manifest, or a settings module with
-`ROOT_URLCONF`.
+**Detected by** `manage.py` (+2), `django` in the manifest (+1), a `from django` import
+(+3), and `rest_framework` anywhere (+1, as evidence).
+
+Pinned by `tests/fixtures/django/` — a runnable Django + DRF project with no database:
+function views, generic class-based views, a `ViewSet` with `@action`s, a mixin-built
+`GenericViewSet`, `include()` of a module, an inline list and a `DefaultRouter`, a
+`re_path`, a settings-derived prefix, a URL conf nothing includes, and patterns built by a
+list comprehension.
+
+**How it maps onto the graph.** The settings file's `ROOT_URLCONF` is the application
+root; every `urlpatterns` list (or any list of `path()` calls) is a router; `include()` is
+a mount. Views are routers too — a function or class in `views.py` is a router with one
+empty-path route per method it serves, and `path("users/", views.list_users)` is a mount of
+it. That is what lets the methods be read where the view is *declared* rather than where
+it is routed, across files, through the ordinary import. Views are declared *implicitly*:
+one nobody routes to is not reported as an orphan, because it is just a function.
 
 **Recognised**
 
-- `urlpatterns` lists in URL configuration modules
-- `path()` and `re_path()` with converters such as `<int:pk>` and `<slug:name>`
-- `include()` composition across URL confs, following `ROOT_URLCONF`
-- DRF `@api_view([...])`
-- DRF viewsets registered on a `DefaultRouter` or `SimpleRouter`, expanded into their
-  generated route set: list, create, retrieve, update, partial update, destroy
-- `@action` decorators on viewsets
-- DRF serializers as request and response schema
-- `permission_classes` as an authentication signal
+- `ROOT_URLCONF = "config.urls"` in any settings module
+- `urlpatterns = [...]`, `+= [...]`, `= [...] + [...]`, including under `if settings.DEBUG:`;
+  any other module-level list of patterns, so `include(auth_patterns)` works
+- `path()`, `re_path()` and the old `url()`; converters `<int:pk>`, `<slug:s>`, `<uuid:u>`,
+  `<path:p>`; regex named groups `(?P<pk>\d+)` typed from their pattern, unnamed groups
+  left unresolved rather than guessed
+- `include("app.urls")`, `include(("app.urls", "app"), namespace=)`, `include(patterns)`,
+  `include([...])` inline, `include(router.urls)`
+- `app_name = "..."` as the group, else the app directory
+- Function views: `@require_http_methods([...])`, `@require_GET/POST/safe`,
+  `@api_view([...])`, else `request.method == "POST"` checks in the body, else GET
+- Class-based views: implemented `get`/`post`/… methods, else the generic base's methods
+  (`ListView`, `CreateView`, `ListCreateAPIView`, `RetrieveUpdateDestroyAPIView`, …),
+  narrowed by `http_method_names`
+- ViewSets: `ModelViewSet`, `ReadOnlyModelViewSet`, mixins, and hand-written
+  `list`/`create`/`retrieve`/`update`/`partial_update`/`destroy`; `@action(detail=,
+  methods=, url_path=, permission_classes=)`; `lookup_field` / `lookup_url_kwarg`;
+  `router.register(prefix, ViewSet)` on a `DefaultRouter`/`SimpleRouter`
+- `serializer_class` as the body of POST/PUT/PATCH (named, not described — like a
+  Pydantic model in FastAPI)
+- Query from `request.GET` / `request.query_params`, headers from `request.headers` and
+  `request.META["HTTP_…"]`, body keys from `request.data` / `request.POST`
+- Auth from `permission_classes` / `authentication_classes` (`TokenAuthentication`,
+  `JWTAuthentication`, `SessionAuthentication`, `BasicAuthentication`, `IsAuthenticated`…),
+  `@login_required`, `@permission_classes([...])`, `@method_decorator(login_required)`
 
 **Gaps**
 
-- `urlpatterns` built conditionally or extended at import time
-- Custom router classes with non-standard route generation
-- Non-DRF class-based views yield methods but rarely schemas
+- Patterns built by a comprehension or a loop are not expanded. Runtime enrich lists them.
+- `admin.site.urls` and `include("django.contrib…")` are skipped silently: Django's own.
+- DRF's format-suffix twins (`users.json`) and the router's API root are not listed —
+  neither statically nor at runtime, on purpose.
+- Serializer *fields* are not read; a serializer names the body. Runtime enrich does not
+  add them either: Django has no schema unless `drf-spectacular` is installed, which is
+  not consulted.
+- Two settings modules naming different `ROOT_URLCONF`s both become roots.
+
+**Runtime enrich available** — sets `DJANGO_SETTINGS_MODULE`, calls `django.setup()`, and
+walks the URL resolver: exact paths, ViewSet action maps, class-based view methods,
+`require_http_methods` read through its closure. A plain function view is listed as GET
+with `x-methods-unknown`, so the static scan's `POST` on it survives the merge rather than
+being marked "not served".

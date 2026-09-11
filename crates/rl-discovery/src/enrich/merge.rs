@@ -95,15 +95,34 @@ pub fn merge(
 
     // A catch-all read from source (`<path:name>`, `{name:path}`) is a plain parameter in
     // an OpenAPI document that did not say otherwise; the two must still be one route.
+    let mut claimed: Vec<EndpointSpec> = Vec::new();
     for spec in unmatched {
         let loose = loose_key(&spec);
         let found = unclaimed
             .iter()
             .find(|(_, r)| loose_key(r) == loose)
             .map(|(id, _)| id.clone());
-        match found {
-            Some(id) => {
-                let runtime = unclaimed.remove(&id).expect("just found");
+        if let Some(id) = found {
+            let runtime = unclaimed.remove(&id).expect("just found");
+            report.matched += 1;
+            claimed.push(runtime.clone());
+            out.push(combine(spec, runtime, Provenance::Matched));
+            continue;
+        }
+
+        // The application listed this path but could not say which methods the view
+        // takes — a plain Django function view. The source said `POST`; believe it.
+        let path = loose_path(&spec);
+        let sibling = unclaimed
+            .values()
+            .chain(claimed.iter())
+            .chain(out.iter())
+            .find(|r| loose_path(r) == path && methods_unknown(r))
+            .cloned();
+        match sibling {
+            Some(mut runtime) => {
+                runtime.method = spec.method.clone();
+                runtime.id = rl_model::EndpointId::new(&runtime.method, &runtime.path);
                 report.matched += 1;
                 out.push(combine(spec, runtime, Provenance::Matched));
             }
@@ -161,11 +180,20 @@ pub fn merge(
 
 /// Identity with catch-all parameters flattened to plain ones.
 fn loose_key(spec: &EndpointSpec) -> String {
-    format!(
-        "{} {}",
-        spec.method.as_str(),
-        spec.path.normalized().replace("{*}", "{}")
-    )
+    format!("{} {}", spec.method.as_str(), loose_path(spec))
+}
+
+fn loose_path(spec: &EndpointSpec) -> String {
+    spec.path.normalized().replace("{*}", "{}")
+}
+
+/// The generator listed the path but not its methods — runtime enrich's
+/// `x-methods-unknown` on a plain Django function view.
+fn methods_unknown(spec: &EndpointSpec) -> bool {
+    spec.metadata
+        .get("methods-unknown")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
 }
 
 /// Runtime detail onto a static location.
@@ -390,6 +418,29 @@ mod tests {
         assert_eq!(report.matched, 1);
         assert_eq!(report.runtime_only, 0);
         assert_eq!(merged.len(), 1);
+    }
+
+    #[test]
+    fn a_static_method_survives_when_the_application_did_not_know_its_methods() {
+        let mut runtime = runtime_spec(HttpMethod::Get, "/items/");
+        runtime
+            .metadata
+            .insert("methods-unknown".into(), serde_json::Value::Bool(true));
+        let (merged, report) = merge(
+            vec![
+                static_spec(HttpMethod::Get, "/items/"),
+                static_spec(HttpMethod::Post, "/items/"),
+            ],
+            vec![runtime],
+        );
+        assert_eq!(report.matched, 2, "{merged:?}");
+        assert_eq!(report.static_only, 0);
+        let post = merged
+            .iter()
+            .find(|s| s.method == HttpMethod::Post)
+            .unwrap();
+        assert_eq!(Provenance::of(post), Some(Provenance::Matched));
+        assert!(post.source.is_some());
     }
 
     #[test]

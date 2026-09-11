@@ -50,11 +50,11 @@ Selecting an endpoint shows everything discovery could establish:
 Where discovery could not establish something, the UI says so. An unresolvable path segment
 appears as `?` with the source expression, rather than a guess.
 
-## Ask the application (FastAPI and Flask)
+## Ask the application (FastAPI, Flask and Django)
 
 Static analysis stops where the code needs running: a prefix from `settings.API_PREFIX`,
-routes registered in a loop, Pydantic schemas. For FastAPI and Flask projects the endpoint
-list offers **Ask the app**. It shows the exact command it will run — interpreter, helper
+routes registered in a loop, Pydantic schemas. For FastAPI, Flask and Django projects the
+endpoint list offers **Ask the app**. It shows the exact command it will run — interpreter, helper
 script, `module:app` target — and where each part came from, and waits for you to press
 **Run**. Nothing is executed before that.
 

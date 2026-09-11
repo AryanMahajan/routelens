@@ -241,6 +241,14 @@ pub fn parse_openapi_value(doc: &Value) -> Result<Imported<OpenApiImport>> {
             if operation.get("deprecated").and_then(Value::as_bool) == Some(true) {
                 spec.metadata.insert("deprecated".into(), Value::Bool(true));
             }
+            // Vendor extensions travel as metadata, `x-` stripped: a generator that knows
+            // something the schema cannot say (runtime enrich's `x-methods-unknown`) gets
+            // to say it.
+            for (key, value) in operation {
+                if let Some(name) = key.strip_prefix("x-") {
+                    spec.metadata.insert(name.to_string(), value.clone());
+                }
+            }
 
             endpoints.push(spec);
         }

@@ -56,7 +56,7 @@ impl std::fmt::Display for SymbolId {
 ///
 /// Unresolved on purpose: `include_router(router)` in `main.py` might mean a local variable
 /// or something imported from another file, and only the graph knows which.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SymbolRef {
     /// The module the reference appears in.
     pub module: PathBuf,
@@ -110,6 +110,10 @@ pub struct RouterFact {
     /// The function an application root is created inside — `create_app` in an app
     /// factory. Runtime enrich needs to call it rather than import it.
     pub factory: Option<String>,
+    /// Declared on the chance something mounts it, not because it is a router in its own
+    /// right — a Django view function, say, which only serves anything once a URL pattern
+    /// names it. Never reported as an orphan, and its routes are dropped when unreached.
+    pub implicit: bool,
     pub span: Span,
 }
 

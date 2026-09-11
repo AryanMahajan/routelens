@@ -18,13 +18,13 @@
 
 use super::python::{
     auth_from_name, callee, collect_imports, docstring, enclosing_function, list_strings,
-    Arguments, Constants,
+    Arguments, Constants, RequestDialect, RequestUsage,
 };
 use super::{Detection, FrameworkAdapter};
 use crate::facts::{FactSink, MountFact, RouteFact, RouterFact, SymbolId, SymbolRef};
 use crate::index::{walk, ParsedFile};
 use crate::project::{Language, ProjectContext};
-use rl_model::{AuthRequirement, BodySchema, HttpMethod, ParamSpec, ParamStyle, PathTemplate};
+use rl_model::{AuthRequirement, HttpMethod, ParamStyle, PathTemplate};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use tree_sitter::Node;
@@ -229,6 +229,7 @@ impl Extractor<'_> {
             } else {
                 None
             },
+            implicit: false,
             span: self.file.span(left),
         });
     }
@@ -487,7 +488,7 @@ impl Extractor<'_> {
 
     fn apply_handler(&self, definition: Node<'_>, fact: &mut RouteFact) {
         let path_names = fact.path.param_names();
-        let usage = RequestUsage::of(self.file, definition, &path_names);
+        let usage = RequestUsage::of(self.file, definition, &path_names, &REQUEST);
         usage.apply(fact);
         if fact.summary.is_none() {
             fact.summary = docstring(self.file, definition);
@@ -702,6 +703,7 @@ fn emit_view_classes(file: &ParsedFile, sink: &mut FactSink) -> BTreeSet<String>
             group: None,
             is_app_root: false,
             factory: None,
+            implicit: false,
             span: file.span(name),
         });
         for (method, function) in methods {
@@ -715,7 +717,7 @@ fn emit_view_classes(file: &ParsedFile, sink: &mut FactSink) -> BTreeSet<String>
             // The rule's own path parameters are not known here, so nothing is filtered
             // against them; a view method rarely reads a path parameter back out of
             // `request.args` anyway.
-            RequestUsage::of(file, function, &[]).apply(&mut fact);
+            RequestUsage::of(file, function, &[], &REQUEST).apply(&mut fact);
             fact.summary = docstring(file, function);
             sink.route(fact);
         }
@@ -725,254 +727,20 @@ fn emit_view_classes(file: &ParsedFile, sink: &mut FactSink) -> BTreeSet<String>
     names
 }
 
-/// What a handler reads from `request`.
-#[derive(Debug, Default)]
-struct RequestUsage {
-    query: Vec<ParamSpec>,
-    headers: Vec<ParamSpec>,
-    body: Option<BodySchema>,
-    body_fields: Vec<String>,
-}
-
-impl RequestUsage {
-    fn of(file: &ParsedFile, definition: Node<'_>, path_names: &[&str]) -> RequestUsage {
-        let mut usage = RequestUsage::default();
-        let Some(body) = definition.child_by_field_name("body") else {
-            return usage;
-        };
-
-        // `data = request.get_json()` / `form = request.form` — names the body travels under.
-        let mut body_aliases: Vec<String> = Vec::new();
-        walk(body, &mut |node| {
-            if node.kind() != "assignment" {
-                return;
-            }
-            let (Some(left), Some(right)) = (
-                node.child_by_field_name("left"),
-                node.child_by_field_name("right"),
-            ) else {
-                return;
-            };
-            if left.kind() == "identifier" && body_source(file, right).is_some() {
-                body_aliases.push(file.text(left).to_string());
-            }
-        });
-
-        walk(body, &mut |node| match node.kind() {
-            "call" => {
-                let Some(function) = node.child_by_field_name("function") else {
-                    return;
-                };
-                if function.kind() != "attribute" {
-                    return;
-                }
-                let (Some(object), Some(attribute)) = (
-                    function.child_by_field_name("object"),
-                    function.child_by_field_name("attribute"),
-                ) else {
-                    return;
-                };
-                let receiver = file.text(object);
-                let method = file.text(attribute);
-                let args = Arguments::of(file, node);
-                let key = args
-                    .first_positional()
-                    .and_then(|n| Constants::default().string_value(file, n));
-
-                if let Some(content_type) = body_source(file, node) {
-                    usage.body.get_or_insert_with(|| BodySchema {
-                        content_type: content_type.to_string(),
-                        schema: None,
-                        example: None,
-                        required: false,
-                    });
-                    return;
-                }
-
-                let Some(key) = key else { return };
-                let is_getter = matches!(method, "get" | "getlist" | "pop");
-                match receiver {
-                    "request.args" | "request.values" if is_getter => {
-                        let mut spec = ParamSpec::new(&key);
-                        spec.default = args
-                            .positional
-                            .get(1)
-                            .copied()
-                            .or_else(|| args.keyword("default"))
-                            .and_then(|n| literal(file, n));
-                        usage.push_query(spec, path_names);
-                    }
-                    "request.headers" if is_getter => usage.push_header(&key),
-                    "request.form" | "request.files" if is_getter => {
-                        usage.body.get_or_insert_with(|| BodySchema {
-                            content_type: if receiver == "request.files" {
-                                "multipart/form-data".to_string()
-                            } else {
-                                "application/x-www-form-urlencoded".to_string()
-                            },
-                            schema: None,
-                            example: None,
-                            required: false,
-                        });
-                        usage.push_field(&key);
-                    }
-                    other if is_getter && body_aliases.iter().any(|a| a == other) => {
-                        usage.push_field(&key);
-                    }
-                    _ => {}
-                }
-            }
-
-            "subscript" => {
-                let (Some(value), Some(index)) = (
-                    node.child_by_field_name("value"),
-                    node.child_by_field_name("subscript"),
-                ) else {
-                    return;
-                };
-                let Some(key) = Constants::default().string_value(file, index) else {
-                    return;
-                };
-                match file.text(value) {
-                    "request.args" | "request.values" => {
-                        usage.push_query(ParamSpec::new(&key).required(), path_names);
-                    }
-                    "request.headers" => usage.push_header(&key),
-                    "request.form" | "request.files" | "request.json" => {
-                        let content_type = body_source(file, value).unwrap_or("application/json");
-                        usage.body.get_or_insert_with(|| BodySchema {
-                            content_type: content_type.to_string(),
-                            schema: None,
-                            example: None,
-                            required: true,
-                        });
-                        usage.push_field(&key);
-                    }
-                    other if body_aliases.iter().any(|a| a == other) => usage.push_field(&key),
-                    _ => {}
-                }
-            }
-
-            "attribute" => {
-                // A bare `request.json` / `request.form` read, with no key.
-                if let Some(content_type) = body_source(file, node) {
-                    usage.body.get_or_insert_with(|| BodySchema {
-                        content_type: content_type.to_string(),
-                        schema: None,
-                        example: None,
-                        required: false,
-                    });
-                }
-            }
-
-            _ => {}
-        });
-
-        usage
-    }
-
-    fn push_query(&mut self, spec: ParamSpec, path_names: &[&str]) {
-        if path_names.contains(&spec.name.as_str())
-            || self.query.iter().any(|q| q.name == spec.name)
-        {
-            return;
-        }
-        self.query.push(spec);
-    }
-
-    fn push_header(&mut self, name: &str) {
-        if !self
-            .headers
-            .iter()
-            .any(|h| h.name.eq_ignore_ascii_case(name))
-        {
-            self.headers.push(ParamSpec::new(name));
-        }
-    }
-
-    fn push_field(&mut self, name: &str) {
-        if !self.body_fields.iter().any(|f| f == name) {
-            self.body_fields.push(name.to_string());
-        }
-    }
-
-    fn apply(mut self, fact: &mut RouteFact) {
-        // `Authorization` read by hand is an auth requirement, not a header to fill in.
-        if let Some(index) = self
-            .headers
-            .iter()
-            .position(|h| h.name.eq_ignore_ascii_case("authorization"))
-        {
-            self.headers.remove(index);
-            if fact.auth.is_none() {
-                fact.auth = Some(AuthRequirement::Bearer { format: None });
-            }
-        }
-
-        fact.query_params = self.query;
-        fact.headers = self.headers;
-        if let Some(mut body) = self.body {
-            if !self.body_fields.is_empty() {
-                let properties: serde_json::Map<String, serde_json::Value> = self
-                    .body_fields
-                    .iter()
-                    .map(|f| (f.clone(), serde_json::json!({})))
-                    .collect();
-                body.schema =
-                    Some(serde_json::json!({ "type": "object", "properties": properties }));
-                if body.content_type == "application/json" {
-                    let example: serde_json::Map<String, serde_json::Value> = self
-                        .body_fields
-                        .iter()
-                        .map(|f| (f.clone(), serde_json::Value::String(String::new())))
-                        .collect();
-                    body.example = Some(serde_json::Value::Object(example));
-                }
-            }
-            fact.body = Some(body);
-        }
-    }
-}
-
-/// The content type a `request.…` expression reads, if it reads a body at all.
-fn body_source(file: &ParsedFile, node: Node<'_>) -> Option<&'static str> {
-    let text = match node.kind() {
-        "call" => {
-            let function = node.child_by_field_name("function")?;
-            file.text(function)
-        }
-        "attribute" => file.text(node),
-        _ => return None,
-    };
-    match text {
-        "request.get_json" | "request.json" => Some("application/json"),
-        "request.form" => Some("application/x-www-form-urlencoded"),
-        "request.files" => Some("multipart/form-data"),
-        "request.get_data" | "request.data" => Some("text/plain"),
-        _ => None,
-    }
-}
-
-fn literal(file: &ParsedFile, node: Node<'_>) -> Option<serde_json::Value> {
-    if let Some(text) = Constants::default().string_value(file, node) {
-        return Some(serde_json::Value::String(text));
-    }
-    match file.text(node) {
-        "True" => Some(serde_json::Value::Bool(true)),
-        "False" => Some(serde_json::Value::Bool(false)),
-        "None" => Some(serde_json::Value::Null),
-        raw => raw
-            .parse::<i64>()
-            .ok()
-            .map(serde_json::Value::from)
-            .or_else(|| {
-                raw.parse::<f64>()
-                    .ok()
-                    .and_then(serde_json::Number::from_f64)
-                    .map(serde_json::Value::Number)
-            }),
-    }
-}
+/// How Flask spells the request object's parts.
+const REQUEST: RequestDialect = RequestDialect {
+    query: &["request.args", "request.values"],
+    headers: &["request.headers"],
+    meta_headers: &[],
+    bodies: &[
+        ("request.get_json", "application/json"),
+        ("request.json", "application/json"),
+        ("request.form", "application/x-www-form-urlencoded"),
+        ("request.files", "multipart/form-data"),
+        ("request.get_data", "text/plain"),
+        ("request.data", "text/plain"),
+    ],
+};
 
 #[cfg(test)]
 mod tests {

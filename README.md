@@ -1,7 +1,7 @@
 # RouteLens — API client that discovers endpoints from your source code
 
-**Open a FastAPI, Flask, Express or Next.js project and see every API route it serves —
-then test it. A local-first, open-source API client built in Rust, with codebase-aware route
+**Open a FastAPI, Flask, Django, Express or Next.js project and see every API route it
+serves — then test it. A local-first, open-source API client built in Rust, with codebase-aware route
 discovery instead of hand-configured collections.**
 
 [![CI](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml/badge.svg)](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml)
@@ -67,14 +67,16 @@ project have?"* to *"I can see it, understand it, and test it."*
 ## What works today
 
 - **Route discovery** for **FastAPI**, **Flask** (blueprints, `MethodView`, Flask-RESTful
-  and RESTX), **Express** (CommonJS and ESM, nested routers, `.route()` chains) and
+  and RESTX), **Django + DRF** (`urlpatterns`, `include()`, class-based views, ViewSets and
+  routers), **Express** (CommonJS and ESM, nested routers, `.route()` chains) and
   **Next.js** (App Router route handlers and `pages/api`), across files, following imports,
-  re-exports and `include_router` / `register_blueprint` / `app.use` prefixes.
+  re-exports and `include_router` / `register_blueprint` / `include()` / `app.use` prefixes.
 - **Honest gaps**: a prefix read from an environment variable shows as `/?/…`, a router
   nobody mounts is flagged as an orphan, a router built by a factory is reported rather than
   dropped.
-- **Ask the app** (opt-in runtime enrich, FastAPI and Flask): import the application and
-  take its own route table — `app.openapi()` or `url_map` — merged onto the static scan.
+- **Ask the app** (opt-in runtime enrich, FastAPI, Flask and Django): import the
+  application and take its own route table — `app.openapi()`, `url_map`, or Django's URL
+  resolver — merged onto the static scan.
   Gaps get resolved, loop-registered routes appear, dead routes are labelled, and every
   source location is kept. The exact command is shown before anything runs.
 - **Request editor** with tabs, path/query/header/body/auth editing, `{{variable}}`
@@ -86,7 +88,7 @@ project have?"* to *"I can see it, understand it, and test it."*
   a private local secret store, disposable caches — with history recorded redacted.
 - **Import** from cURL, raw HTTP and OpenAPI 3.x / Swagger 2.0.
 
-Verified by 450+ tests, including fixture projects per framework whose snapshots record
+Verified by 460+ tests, including fixture projects per framework whose snapshots record
 **expected misses** as well as hits, a run against the `expressjs/express` repository
 itself, and an end-to-end runtime-enrich pass over a real Flask application.
 
@@ -98,10 +100,10 @@ itself, and an end-to-end runtime-enrich pass over a real Flask application.
 | [Express](docs/discovery/frameworks.md#express)  | JS/TS  | ✅ Implemented | Module graph across `require`/`import`, mounting, chains |
 | [Next.js](docs/discovery/frameworks.md#nextjs)   | TS/JS  | ✅ Implemented | App Router + legacy `pages/api`, dynamic and catch-all segments |
 | [Flask](docs/discovery/frameworks.md#flask)      | Python | ✅ Implemented | Blueprints (nested, re-registered), `MethodView`, Flask-RESTful / RESTX, `add_url_rule` |
-| Django / DRF | Python | Planned | `urlpatterns`, `include()`, DRF routers |
+| [Django / DRF](docs/discovery/frameworks.md#django--drf) | Python | ✅ Implemented | `urlpatterns`, `include()`, `re_path`, class-based views, ViewSets, `DefaultRouter`, `@action` |
 
-Discovery is static by default — RouteLens reads your code and never executes it. For
-FastAPI and Flask, an opt-in [runtime enrich](docs/discovery/runtime-enrich.md) step imports
+Discovery is static by default — RouteLens reads your code and never executes it. For the
+Python frameworks, an opt-in [runtime enrich](docs/discovery/runtime-enrich.md) step imports
 your app for an exact result when you ask for it, and always shows you the exact command
 first.
 
@@ -122,8 +124,8 @@ npm run tauri dev
 ```
 
 The first build compiles the Rust core and takes a few minutes; after that it is seconds.
-Open **`tests/fixtures/express`**, **`tests/fixtures/fastapi`** or **`tests/fixtures/flask`**
-for a project with every kind of route, gap and orphan in it. The Python ones run
+Open any of **`tests/fixtures/{fastapi,flask,django,express,nextjs}`** for a project with
+every kind of route, gap and orphan in it. The Python ones run
 (`pip install -r requirements.txt`), so you can send the requests and try **Ask the app**.
 
 ## How discovery works, in three sentences
@@ -181,8 +183,8 @@ remembers the decision per project until you withdraw it.
 **Is it a Postman alternative?** For testing the API of a codebase you have in front of you,
 yes. It is not trying to replace team collaboration features, mock servers or monitoring.
 
-**Which frameworks are supported?** FastAPI, Flask, Express and Next.js today; Django and
-DRF next. See [framework support](docs/discovery/frameworks.md).
+**Which frameworks are supported?** FastAPI, Flask, Django (with DRF), Express and Next.js.
+See [framework support](docs/discovery/frameworks.md).
 
 **Where are my secrets stored?** Outside the committed workspace, in a private local store.
 Environment files reference them by name only. See [security](docs/security.md).

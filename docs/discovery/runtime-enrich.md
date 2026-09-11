@@ -10,6 +10,8 @@ document with every path, parameter, schema, and security scheme, generated from
 objects that serve the requests. No static analysis will ever match that.
 
 Flask exposes `app.url_map`, which gives a complete and exact route list, though no schemas.
+Django's URL resolver, once `django.setup()` has run, is the same thing for Django — with
+ViewSet action maps and class-based view methods attached.
 
 When fidelity matters, going to the source of truth beats inferring it. And the things
 static analysis is honest about not knowing — a prefix read from `settings.API_PREFIX`,
@@ -46,6 +48,7 @@ See [security](../security.md) for the full trust model.
    | A run command in `Procfile`, `Makefile`, `Dockerfile`, compose, `package.json` | `uvicorn app.main:app --port 9000` | `app.main:app` |
    | `--factory` on that command | `uvicorn --factory app:create_app` | `app:create_app()` |
    | `flask --app …` or `FLASK_APP=…` in an env file or Dockerfile | `flask --app app run` | `app` (Flask's own lookup applies) |
+   | `DJANGO_SETTINGS_MODULE` in `manage.py`, or where the scan found `ROOT_URLCONF` | `config/settings.py` | `config.settings` |
    | Where the static scan found `app = FastAPI()` / `Flask()` | `app/main.py` | `app.main:app` |
    | … inside a factory function | `def create_app():` in `app/__init__.py` | `app:create_app()` |
 
@@ -75,6 +78,13 @@ See [security](../security.md) for the full trust model.
    - **Flask** — walks `app.url_map`, converting `<int:id>` rules into an OpenAPI
      document with path parameters typed from the converters, blueprint names as tags, and
      view docstrings as summaries. Flask's built-in `static` route is dropped.
+   - **Django** — sets `DJANGO_SETTINGS_MODULE`, calls `django.setup()`, and walks the
+     resolver: `<int:pk>` converters and `(?P<pk>…)` regex groups become typed parameters,
+     namespaces become tags, ViewSet action maps and class-based view handlers give the
+     methods, and `require_http_methods` is read through the decorator's closure. A plain
+     function view is listed as GET with `x-methods-unknown`, so a `POST` the static scan
+     read from an `if request.method == "POST"` survives the merge. DRF's format-suffix
+     twins, API root and the admin are dropped.
 
    It introspects only: no server is started, no port is bound, nothing is written. Its
    stdout is the JSON result; anything the application prints while importing is redirected
@@ -121,6 +131,8 @@ Rescanning returns to the plain static result; enrich is re-run on request.
 
 - The project is Next.js or Express, where there is no runtime spec to fetch and static
   analysis is the whole story. The button is not offered.
+- The project is Django with `drf-spectacular`: its generated schema is richer than the
+  resolver walk, and importing that document is the better path today.
 - You only need paths and methods, which static analysis gets right in the common case.
 - You cannot or would rather not install the project's dependencies.
 
@@ -128,7 +140,7 @@ RouteLens is fully usable without ever enabling it.
 
 ## Trying it
 
-`tests/fixtures/flask` and `tests/fixtures/fastapi` are runnable. Create an environment in
+`tests/fixtures/flask`, `tests/fixtures/fastapi` and `tests/fixtures/django` are runnable. Create an environment in
 one, install its requirements, open it in RouteLens, scan, then **Ask the app**:
 
 ```bash

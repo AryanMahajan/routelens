@@ -249,6 +249,7 @@ impl Extractor<'_, '_> {
             },
             is_app_root,
             factory: None,
+            implicit: false,
             span: self.span(node),
         });
     }

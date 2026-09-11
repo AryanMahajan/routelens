@@ -319,3 +319,52 @@ fn flask_fixture_reports_the_expected_problems() {
         "the MethodView in views.py is linked to its rules in __init__.py, and `methods=` narrows /notes"
     );
 }
+
+#[test]
+fn django_fixture_matches_snapshot() {
+    check("django");
+}
+
+#[test]
+fn django_fixture_reports_the_expected_problems() {
+    let root = fixtures_dir().join("django");
+    let result = scan(&root).unwrap();
+    let warnings = result.warnings.join("\n");
+
+    assert!(
+        warnings.contains("legacy/urls.py:urlpatterns") && warnings.contains("never mounted"),
+        "the URL conf nothing includes should be reported, got:\n{warnings}"
+    );
+    assert!(
+        result
+            .endpoints
+            .iter()
+            .any(|e| e.path.unresolved_exprs() == vec!["settings.INTERNAL_PREFIX"]),
+        "the settings-derived prefix should be an unresolved gap, not a guess"
+    );
+    assert!(
+        !result
+            .endpoints
+            .iter()
+            .any(|e| e.path.to_string().contains("reports/daily")),
+        "list-comprehension patterns are a documented miss"
+    );
+    // The ViewSet in views.py is expanded at the router registration in urls.py.
+    let users: Vec<String> = result
+        .endpoints
+        .iter()
+        .filter(|e| e.path.to_string().starts_with("/api/v1/users"))
+        .map(|e| e.display())
+        .collect();
+    assert_eq!(
+        users,
+        vec![
+            "GET /api/v1/users/",
+            "POST /api/v1/users/",
+            "GET /api/v1/users/recent/",
+            "DELETE /api/v1/users/{pk}/",
+            "GET /api/v1/users/{pk}/",
+            "POST /api/v1/users/{pk}/set-password/",
+        ]
+    );
+}

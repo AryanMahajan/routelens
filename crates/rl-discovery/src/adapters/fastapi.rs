@@ -172,6 +172,7 @@ fn extract_declaration(
         } else {
             None
         },
+        implicit: false,
         span: file.span(left),
     });
 }

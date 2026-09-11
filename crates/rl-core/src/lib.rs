@@ -157,7 +157,7 @@ impl ProjectScan {
 }
 
 /// Frameworks the helper can ask. Next.js and Express have no runtime spec to fetch.
-const ENRICHABLE_FRAMEWORKS: &[&str] = &["fastapi", "flask"];
+const ENRICHABLE_FRAMEWORKS: &[&str] = &["fastapi", "flask", "django"];
 
 fn is_enrichable(result: &ScanResult) -> bool {
     result

@@ -9,8 +9,8 @@ rust-version = "1.88"
 authors = ["Aryan Mahajan"]
 repository = "https://github.com/AryanMahajan/routelens"
 homepage = "https://github.com/AryanMahajan/routelens"
-description = "Local-first API client that discovers HTTP endpoints from source code — FastAPI, Flask, Express, Next.js — and lets you test them immediately."
-keywords = ["api-client", "openapi", "fastapi", "express", "nextjs"]
+description = "Local-first API client that discovers HTTP endpoints from source code — FastAPI, Flask, Django, Express, Next.js — and lets you test them immediately."
+keywords = ["api-client", "openapi", "fastapi", "django", "express"]
 categories = ["development-tools", "web-programming::http-client", "command-line-utilities"]
 
 [workspace.dependencies]

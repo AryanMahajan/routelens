@@ -4,6 +4,7 @@
 //! is all. In particular it does **not** resolve prefixes, read files, or fold constants —
 //! see `docs/discovery/adding-a-framework.md`.
 
+pub mod django;
 pub mod express;
 pub mod fastapi;
 pub mod flask;
@@ -87,6 +88,7 @@ pub fn all() -> Vec<Box<dyn FrameworkAdapter>> {
     vec![
         Box::new(fastapi::FastApiAdapter),
         Box::new(flask::FlaskAdapter),
+        Box::new(django::DjangoAdapter),
         Box::new(nextjs::NextJsAdapter),
         Box::new(express::ExpressAdapter),
     ]

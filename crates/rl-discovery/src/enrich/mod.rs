@@ -376,6 +376,45 @@ mod tests {
     }
 
     #[test]
+    fn the_django_fixture_reports_its_resolver() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/django")
+            .canonicalize()
+            .unwrap();
+        let Some(python) = python_with("rest_framework") else {
+            eprintln!("skipping: no Python with djangorestframework importable");
+            return;
+        };
+        let scratch = tempfile::TempDir::new().unwrap();
+        let mut plan = plan_for(&root, python, "config.settings");
+        plan.helper_path = scratch.path().join(HELPER_FILE_NAME);
+
+        let output = run(&plan, DEFAULT_TIMEOUT).unwrap();
+        assert_eq!(output.framework, "django");
+        let paths = output.openapi["paths"].as_object().unwrap();
+        assert!(
+            paths.contains_key("/api/reports/daily/"),
+            "list-comprehension routes are exact at runtime"
+        );
+        assert!(
+            paths.contains_key("/internal/stats/"),
+            "the settings prefix is known at runtime"
+        );
+        assert!(
+            paths.contains_key("/api/v1/users/{pk}/set-password/"),
+            "DRF regex routes are converted"
+        );
+        assert!(
+            !paths.keys().any(|k| k.contains("format")),
+            "format-suffix twins are dropped"
+        );
+        assert!(
+            paths["/api/items/"]["post"].is_object(),
+            "require_http_methods is read through its closure"
+        );
+    }
+
+    #[test]
     fn a_broken_target_fails_with_the_traceback() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/fixtures/flask")

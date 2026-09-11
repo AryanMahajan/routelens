@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install the fixtures' dependencies
-        run: pip install -r tests/fixtures/flask/requirements.txt -r tests/fixtures/fastapi/requirements.txt
+        run: pip install -r tests/fixtures/flask/requirements.txt -r tests/fixtures/fastapi/requirements.txt -r tests/fixtures/django/requirements.txt
 
       - name: Test
         run: cargo test --workspace

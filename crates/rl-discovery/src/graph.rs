@@ -140,10 +140,28 @@ impl RegistrationGraph {
         let import_bindings = resolve_imports(&sink.imports, &known);
         let exports = index_exports(&sink.exports);
 
+        // Two settings files naming the same `ROOT_URLCONF`, or `app.use` called twice
+        // with the same arguments, would otherwise walk the child twice and list every
+        // route under it twice.
+        let mut seen = BTreeSet::new();
+        let mounts: Vec<MountFact> = sink
+            .mounts
+            .into_iter()
+            .filter(|m| {
+                seen.insert((
+                    m.parent.clone(),
+                    m.child.clone(),
+                    m.prefix.render(rl_model::ParamStyle::Braces),
+                    m.methods.clone(),
+                    m.replaces_child_prefix,
+                ))
+            })
+            .collect();
+
         RegistrationGraph {
             routers,
             routes: sink.routes,
-            mounts: sink.mounts,
+            mounts,
             import_bindings,
             exports,
         }
@@ -319,7 +337,15 @@ impl RegistrationGraph {
             .collect();
 
         for symbol in unreached {
-            if self.routers.contains_key(&symbol) {
+            // An orphan mounted under an earlier orphan was listed by that walk already.
+            if reached.contains(&symbol) {
+                continue;
+            }
+            if let Some(router) = self.routers.get(&symbol) {
+                if router.implicit {
+                    // A view nobody routed to is not an API; it is just a function.
+                    continue;
+                }
                 warnings.push(GraphWarning::OrphanedRouter {
                     symbol: symbol.to_string(),
                 });
@@ -330,7 +356,6 @@ impl RegistrationGraph {
                 });
             }
             let mut stack = Vec::new();
-            let mut orphan_reached = BTreeSet::new();
             self.walk(
                 &symbol,
                 &PathTemplate::empty(),
@@ -341,7 +366,7 @@ impl RegistrationGraph {
                 &routes_by_router,
                 &mounts_by_parent,
                 &mut stack,
-                &mut orphan_reached,
+                &mut reached,
                 &mut resolved,
                 &mut warnings,
                 true,
@@ -456,6 +481,32 @@ fn resolve_imports(
     let mut bindings = BTreeMap::new();
 
     for import in imports {
+        let is_python =
+            crate::project::Language::of(&import.module) == Some(crate::project::Language::Python);
+
+        // `from .api import admin` looks like a symbol import but usually names a
+        // *submodule*, so `admin.router` means `api/admin.py`'s `router`. Try that first —
+        // before the package itself, which a namespace package without `__init__.py`
+        // never resolves to — and fall back to a symbol when no such file exists.
+        let submodule = match &import.original {
+            Some(name) if is_python => {
+                let nested = if import.source.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{}.{}", import.source, name)
+                };
+                crate::facts::resolve_python_module(&import.module, &nested, import.level, known)
+            }
+            _ => None,
+        };
+        if let Some(submodule) = submodule {
+            bindings.insert(
+                (import.module.clone(), import.local_name.clone()),
+                Binding::Module(submodule),
+            );
+            continue;
+        }
+
         let Some(module) =
             crate::facts::resolve_module(&import.module, &import.source, import.level, known)
         else {
@@ -464,29 +515,7 @@ fn resolve_imports(
             continue;
         };
 
-        let is_python =
-            crate::project::Language::of(&import.module) == Some(crate::project::Language::Python);
-
         let binding = match &import.original {
-            Some(name) if is_python => {
-                // `from .api import admin` looks like a symbol import but usually names a
-                // *submodule*, so `admin.router` means `api/admin.py`'s `router`. Try that
-                // first; fall back to a symbol when no such file exists.
-                let nested = if import.source.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{}.{}", import.source, name)
-                };
-                match crate::facts::resolve_python_module(
-                    &import.module,
-                    &nested,
-                    import.level,
-                    known,
-                ) {
-                    Some(submodule) => Binding::Module(submodule),
-                    None => Binding::Symbol(SymbolId::new(module, name)),
-                }
-            }
             Some(name) => Binding::Symbol(SymbolId::new(module, name)),
             None => Binding::Module(module),
         };
@@ -525,6 +554,7 @@ mod tests {
             group: None,
             is_app_root: true,
             factory: None,
+            implicit: false,
             span: Span::new(1, 1),
         }
     }
@@ -536,6 +566,7 @@ mod tests {
             group: group.map(str::to_string),
             is_app_root: false,
             factory: None,
+            implicit: false,
             span: Span::new(1, 1),
         }
     }

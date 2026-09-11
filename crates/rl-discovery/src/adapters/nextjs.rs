@@ -118,6 +118,7 @@ impl FrameworkAdapter for NextJsAdapter {
             group: None,
             is_app_root: true,
             factory: None,
+            implicit: false,
             span: Span::default(),
         });
         sink.import(ImportFact {

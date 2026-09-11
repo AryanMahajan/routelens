@@ -62,6 +62,8 @@ sink.router(RouterFact {
     group,                   // tags / name, used for tree grouping
     is_app_root,             // true for `app = FastAPI()`, `app = express()`
     factory,                 // the enclosing function of an app root: `create_app`
+    implicit,                // declared in case something mounts it (a Django view);
+                             // never an orphan, routes dropped when unreached
     span,
 });
 
@@ -115,6 +117,12 @@ that router at the rule. The class in `views.py` and its registration in `__init
 then linked by the import, like any blueprint, and `methods=["GET"]` on the rule is the
 mount's method filter. No new concept was needed.
 
+Django goes one step further: *every* view function and class is an implicit router, and
+`path("users/", views.list_users)` mounts it. The methods are read where the view is
+declared, across files, and a view nobody routes to is simply never listed. Identical
+mounts are deduplicated, so two settings modules naming the same `ROOT_URLCONF` do not
+list the tree twice.
+
 The graph reports what it could not do: a mount whose child is declared nowhere in the
 project (`UndeclaredMount`), routes on a name that is not a router — typically a function
 parameter (`UndeclaredRouter`, the routes kept as orphans) — and the usual orphans and
@@ -125,9 +133,12 @@ cycles.
 Recognition code that is about the *language* rather than the framework lives in
 `adapters/python.rs` and `adapters/js.rs`: constant folding, call arguments, import and
 export collection, and — for JavaScript — what a handler reads off its request object.
-The Flask adapter reuses everything the FastAPI one does — constants, arguments, imports,
-docstrings, the auth-name heuristic, the enclosing-function lookup that spots an app
-factory; a Koa or Fastify adapter would reuse everything Express does.
+The Flask and Django adapters reuse everything the FastAPI one does — constants,
+arguments, imports, docstrings, the auth-name heuristic, the enclosing-function lookup that
+spots an app factory — plus `RequestUsage`, one walker over what a handler reads from its
+request object, parameterised by a `RequestDialect` (`request.args` for Flask,
+`request.GET` / `request.query_params` for Django). A Koa or Fastify adapter would reuse
+everything Express does.
 
 If the framework can describe itself at runtime — a FastAPI `app.openapi()`, a Flask
 `url_map` — extend `crates/rl-discovery/src/enrich/helper.py` rather than writing a second

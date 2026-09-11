@@ -117,6 +117,7 @@ fn ports_from_run_commands(text: &str) -> Vec<u16> {
             "hypercorn",
             "flask run",
             "flask --app",
+            "runserver",
             "daphne",
             "next dev",
             "next start",
@@ -152,6 +153,14 @@ fn ports_from_run_commands(text: &str) -> Vec<u16> {
                     .flatten()
             }) {
                 if let Ok(port) = value.trim_matches(|c: char| !c.is_ascii_digit()).parse() {
+                    ports.push(port);
+                }
+            }
+
+            // `manage.py runserver 0.0.0.0:8001` and `runserver 8001`.
+            if index > 0 && tokens[index - 1] == "runserver" {
+                let port = token.rsplit_once(':').map_or(*token, |(_, p)| p);
+                if let Ok(port) = port.parse() {
                     ports.push(port);
                 }
             }

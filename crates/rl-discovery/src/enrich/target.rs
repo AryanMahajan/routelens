@@ -89,6 +89,18 @@ pub fn infer(project: &ProjectContext, roots: &[AppRoot]) -> Vec<AppTarget> {
         }
     }
 
+    // `manage.py` names the settings module Django is configured from.
+    if let Some(text) = project.manifest("manage.py") {
+        for module in django_settings_modules(text) {
+            add(AppTarget {
+                target: module,
+                cwd: PathBuf::from("."),
+                source: "DJANGO_SETTINGS_MODULE in manage.py".to_string(),
+                confidence: 9,
+            });
+        }
+    }
+
     // What the static scan saw: `app = FastAPI()` in `app/main.py` is `app.main:app`.
     let single = roots.len() == 1;
     for root in roots {
@@ -97,6 +109,8 @@ pub fn infer(project: &ProjectContext, roots: &[AppRoot]) -> Vec<AppTarget> {
         };
         let target = match &root.factory {
             Some(factory) => format!("{module}:{factory}()"),
+            // Django's root is the settings module itself; the helper builds the resolver.
+            None if root.framework == "django" => module,
             None => format!("{module}:{}", root.name),
         };
         add(AppTarget {
@@ -260,6 +274,23 @@ fn flask_app_target(value: &str) -> Option<String> {
     })
 }
 
+/// `os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")` in `manage.py`.
+fn django_settings_modules(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| line.contains("DJANGO_SETTINGS_MODULE"))
+        .filter_map(|line| {
+            let after = line.split("DJANGO_SETTINGS_MODULE").nth(1)?;
+            // The first quoted piece after the key that reads as a module path; the
+            // key's own closing quote makes counting quotes unreliable.
+            after
+                .split(['"', '\''])
+                .map(str::trim)
+                .find(|value| !value.is_empty() && value.split('.').all(is_identifier))
+                .map(str::to_string)
+        })
+        .collect()
+}
+
 /// The dotted module a file is imported as, and the directory to import it from.
 ///
 /// Walks up while `__init__.py` exists: `app/api/users.py` under `app/__init__.py` is
@@ -356,6 +387,16 @@ mod tests {
         assert_eq!(
             flask_app_settings("ENV FLASK_APP=\"app:create_app()\"\n"),
             vec!["app:create_app()"]
+        );
+    }
+
+    #[test]
+    fn manage_py_names_the_django_settings_module() {
+        assert_eq!(
+            django_settings_modules(
+                "def main():\n    os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\", \"config.settings\")\n"
+            ),
+            vec!["config.settings"]
         );
     }
 

@@ -21,7 +21,7 @@ Implementation is phased so each phase leaves a usable application.
 | P3 | Discovery core + FastAPI adapter + explorer | Done |
 | P4 | Next.js adapter, then Express adapter | Done |
 | P5 | Runtime enrich, Flask adapter | Done |
-| P6 | Collections & environments UI, Django + DRF | Environments UI landed early; the rest not started |
+| P6 | Collections & environments UI, Django + DRF | Django + DRF done; collections UI in progress |
 
 Live phase tracking, including what slipped and why, lives in `docs/internal/roadmap.md`
 (not committed).

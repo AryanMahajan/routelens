@@ -3,9 +3,9 @@
 //! Everything here is *recognition* — reading a literal, finding a keyword argument, folding a
 //! constant. Nothing composes a path; that is the graph's job.
 
-use crate::facts::ImportFact;
+use crate::facts::{ImportFact, RouteFact};
 use crate::index::{walk, ParsedFile};
-use rl_model::{AuthRequirement, ParamStyle, PathSegment, PathTemplate};
+use rl_model::{AuthRequirement, BodySchema, ParamSpec, ParamStyle, PathSegment, PathTemplate};
 use std::collections::BTreeMap;
 use tree_sitter::Node;
 
@@ -395,6 +395,305 @@ pub fn collect_imports(file: &ParsedFile) -> Vec<ImportFact> {
     });
 
     imports
+}
+
+/// How a framework spells the parts of its request object, so [`RequestUsage`] can read
+/// `request.args.get("q")` and `request.GET.get("q")` with one walker.
+pub struct RequestDialect {
+    /// Receivers whose `.get(...)` / `[...]` name a query parameter.
+    pub query: &'static [&'static str],
+    /// Receivers whose `.get(...)` / `[...]` name a header, as spelled on the wire.
+    pub headers: &'static [&'static str],
+    /// Receivers whose keys are WSGI-style — Django's `request.META["HTTP_X_TOKEN"]`.
+    pub meta_headers: &'static [&'static str],
+    /// Expressions that read a body, with the content type each implies.
+    pub bodies: &'static [(&'static str, &'static str)],
+}
+
+impl RequestDialect {
+    fn body_content_type(&self, text: &str) -> Option<&'static str> {
+        self.bodies
+            .iter()
+            .find(|(expr, _)| *expr == text)
+            .map(|(_, ty)| *ty)
+    }
+}
+
+/// What a handler reads from its request object: query parameters, headers, and a body
+/// with the keys taken out of it.
+///
+/// Best-effort by design. Where a framework declares these in a signature (FastAPI) the
+/// signature is the better source; Flask and Django only ever say so in the body.
+#[derive(Debug, Default)]
+pub struct RequestUsage {
+    pub query: Vec<ParamSpec>,
+    pub headers: Vec<ParamSpec>,
+    pub body: Option<BodySchema>,
+    pub body_fields: Vec<String>,
+}
+
+impl RequestUsage {
+    pub fn of(
+        file: &ParsedFile,
+        definition: Node<'_>,
+        path_names: &[&str],
+        dialect: &RequestDialect,
+    ) -> RequestUsage {
+        let mut usage = RequestUsage::default();
+        let Some(body) = definition.child_by_field_name("body") else {
+            return usage;
+        };
+
+        // `data = request.get_json()` / `form = request.form` — names the body travels under.
+        let mut body_aliases: Vec<String> = Vec::new();
+        walk(body, &mut |node| {
+            if node.kind() != "assignment" {
+                return;
+            }
+            let (Some(left), Some(right)) = (
+                node.child_by_field_name("left"),
+                node.child_by_field_name("right"),
+            ) else {
+                return;
+            };
+            if left.kind() == "identifier" && body_source(file, right, dialect).is_some() {
+                body_aliases.push(file.text(left).to_string());
+            }
+        });
+
+        walk(body, &mut |node| match node.kind() {
+            "call" => {
+                let Some(function) = node.child_by_field_name("function") else {
+                    return;
+                };
+                if function.kind() != "attribute" {
+                    return;
+                }
+                let (Some(object), Some(attribute)) = (
+                    function.child_by_field_name("object"),
+                    function.child_by_field_name("attribute"),
+                ) else {
+                    return;
+                };
+                let receiver = file.text(object);
+                let method = file.text(attribute);
+                let args = Arguments::of(file, node);
+                let key = args
+                    .first_positional()
+                    .and_then(|n| Constants::default().string_value(file, n));
+
+                if let Some(content_type) = body_source(file, node, dialect) {
+                    usage.body.get_or_insert_with(|| BodySchema {
+                        content_type: content_type.to_string(),
+                        schema: None,
+                        example: None,
+                        required: false,
+                    });
+                    return;
+                }
+
+                let Some(key) = key else { return };
+                if !matches!(method, "get" | "getlist" | "pop") {
+                    return;
+                }
+                if dialect.query.contains(&receiver) {
+                    let mut spec = ParamSpec::new(&key);
+                    spec.default = args
+                        .positional
+                        .get(1)
+                        .copied()
+                        .or_else(|| args.keyword("default"))
+                        .and_then(|n| literal(file, n));
+                    usage.push_query(spec, path_names);
+                } else if dialect.headers.contains(&receiver) {
+                    usage.push_header(&key);
+                } else if dialect.meta_headers.contains(&receiver) {
+                    if let Some(name) = meta_header_name(&key) {
+                        usage.push_header(&name);
+                    }
+                } else if let Some(content_type) = dialect.body_content_type(receiver) {
+                    // `request.form.get("name")` — a keyed read of a body.
+                    usage.body.get_or_insert_with(|| BodySchema {
+                        content_type: content_type.to_string(),
+                        schema: None,
+                        example: None,
+                        required: false,
+                    });
+                    usage.push_field(&key);
+                } else if body_aliases.iter().any(|a| a == receiver) {
+                    usage.push_field(&key);
+                }
+            }
+
+            "subscript" => {
+                let (Some(value), Some(index)) = (
+                    node.child_by_field_name("value"),
+                    node.child_by_field_name("subscript"),
+                ) else {
+                    return;
+                };
+                let Some(key) = Constants::default().string_value(file, index) else {
+                    return;
+                };
+                let receiver = file.text(value);
+                if dialect.query.contains(&receiver) {
+                    usage.push_query(ParamSpec::new(&key).required(), path_names);
+                } else if dialect.headers.contains(&receiver) {
+                    usage.push_header(&key);
+                } else if dialect.meta_headers.contains(&receiver) {
+                    if let Some(name) = meta_header_name(&key) {
+                        usage.push_header(&name);
+                    }
+                } else if let Some(content_type) = dialect.body_content_type(receiver) {
+                    usage.body.get_or_insert_with(|| BodySchema {
+                        content_type: content_type.to_string(),
+                        schema: None,
+                        example: None,
+                        required: true,
+                    });
+                    usage.push_field(&key);
+                } else if body_aliases.iter().any(|a| a == receiver) {
+                    usage.push_field(&key);
+                }
+            }
+
+            "attribute" => {
+                // A bare `request.json` / `request.form` read, with no key.
+                if let Some(content_type) = body_source(file, node, dialect) {
+                    usage.body.get_or_insert_with(|| BodySchema {
+                        content_type: content_type.to_string(),
+                        schema: None,
+                        example: None,
+                        required: false,
+                    });
+                }
+            }
+
+            _ => {}
+        });
+
+        usage
+    }
+
+    fn push_query(&mut self, spec: ParamSpec, path_names: &[&str]) {
+        if path_names.contains(&spec.name.as_str())
+            || self.query.iter().any(|q| q.name == spec.name)
+        {
+            return;
+        }
+        self.query.push(spec);
+    }
+
+    fn push_header(&mut self, name: &str) {
+        if !self
+            .headers
+            .iter()
+            .any(|h| h.name.eq_ignore_ascii_case(name))
+        {
+            self.headers.push(ParamSpec::new(name));
+        }
+    }
+
+    fn push_field(&mut self, name: &str) {
+        if !self.body_fields.iter().any(|f| f == name) {
+            self.body_fields.push(name.to_string());
+        }
+    }
+
+    /// Write what was read onto the route. An `Authorization` header read by hand is an
+    /// auth requirement, not a header to fill in.
+    pub fn apply(mut self, fact: &mut RouteFact) {
+        if let Some(index) = self
+            .headers
+            .iter()
+            .position(|h| h.name.eq_ignore_ascii_case("authorization"))
+        {
+            self.headers.remove(index);
+            if fact.auth.is_none() {
+                fact.auth = Some(AuthRequirement::Bearer { format: None });
+            }
+        }
+
+        fact.query_params = self.query;
+        fact.headers = self.headers;
+        if let Some(mut body) = self.body {
+            if !self.body_fields.is_empty() {
+                let properties: serde_json::Map<String, serde_json::Value> = self
+                    .body_fields
+                    .iter()
+                    .map(|f| (f.clone(), serde_json::json!({})))
+                    .collect();
+                body.schema =
+                    Some(serde_json::json!({ "type": "object", "properties": properties }));
+                if body.content_type == "application/json" {
+                    let example: serde_json::Map<String, serde_json::Value> = self
+                        .body_fields
+                        .iter()
+                        .map(|f| (f.clone(), serde_json::Value::String(String::new())))
+                        .collect();
+                    body.example = Some(serde_json::Value::Object(example));
+                }
+            }
+            fact.body = Some(body);
+        }
+    }
+}
+
+/// The content type a `request.…` expression reads, if it reads a body at all.
+fn body_source(
+    file: &ParsedFile,
+    node: Node<'_>,
+    dialect: &RequestDialect,
+) -> Option<&'static str> {
+    let text = match node.kind() {
+        "call" => {
+            let function = node.child_by_field_name("function")?;
+            file.text(function)
+        }
+        "attribute" => file.text(node),
+        _ => return None,
+    };
+    dialect.body_content_type(text)
+}
+
+/// `HTTP_X_API_KEY` → `X-Api-Key`; WSGI's spelling of a request header.
+fn meta_header_name(key: &str) -> Option<String> {
+    let rest = key.strip_prefix("HTTP_")?;
+    Some(
+        rest.split('_')
+            .map(|part| {
+                let lower = part.to_ascii_lowercase();
+                let mut chars = lower.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("-"),
+    )
+}
+
+/// A literal default, as JSON.
+pub fn literal(file: &ParsedFile, node: Node<'_>) -> Option<serde_json::Value> {
+    if let Some(text) = Constants::default().string_value(file, node) {
+        return Some(serde_json::Value::String(text));
+    }
+    match file.text(node) {
+        "True" => Some(serde_json::Value::Bool(true)),
+        "False" => Some(serde_json::Value::Bool(false)),
+        "None" => Some(serde_json::Value::Null),
+        raw => raw
+            .parse::<i64>()
+            .ok()
+            .map(serde_json::Value::from)
+            .or_else(|| {
+                raw.parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                    .map(serde_json::Value::Number)
+            }),
+    }
 }
 
 #[cfg(test)]
