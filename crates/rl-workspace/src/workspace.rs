@@ -239,6 +239,15 @@ impl Workspace {
         write_yaml(&path, environment, &environment.name)
     }
 
+    pub fn delete_environment(&self, name: &str) -> Result<()> {
+        let path = self.layout.environment_file(name)?;
+        if !path.is_file() {
+            return Err(WorkspaceError::NoSuchEnvironment(name.to_string()));
+        }
+        std::fs::remove_file(&path)
+            .map_err(|e| WorkspaceError::io(format!("deleting {}", path.display()), e))
+    }
+
     // --- secrets ------------------------------------------------------------------------
 
     pub fn secrets(&self) -> FileSecretStore {

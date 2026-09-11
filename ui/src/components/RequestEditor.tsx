@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AuthConfig, BodyValue, RequestDraft } from "../types";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { methodColour } from "./MethodBadge";
+import { VariableInput } from "./VariableInput";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -11,11 +12,14 @@ export function RequestEditor({
   request,
   onChange,
   onSend,
+  onCurl,
   sending,
 }: {
   request: RequestDraft;
   onChange: (request: RequestDraft) => void;
   onSend: () => void;
+  /** A cURL command landed in the URL bar; the parent turns it into a request. */
+  onCurl: (text: string) => void;
   sending: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("params");
@@ -56,15 +60,21 @@ export function RequestEditor({
           ))}
         </select>
 
-        <input
+        <VariableInput
           value={request.url}
-          onChange={(e) => patch({ url: e.target.value })}
+          onChange={(url) => {
+            // Paste a whole cURL command here and it becomes the request — no dialog.
+            if (/^\s*curl\s/i.test(url)) {
+              onCurl(url);
+              return;
+            }
+            patch({ url });
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !sending) onSend();
           }}
-          placeholder="{{base_url}}/api/v1/users"
-          spellCheck={false}
-          className="min-w-0 flex-1 rounded border border-edge bg-panel px-3 py-1.5 font-mono
+          placeholder="{{base_url}}/api/v1/users — or paste a cURL command"
+          className="rounded border border-edge bg-panel px-3 py-1.5 font-mono
             outline-none placeholder:text-muted/60 focus:border-accent"
         />
 

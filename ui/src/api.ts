@@ -51,6 +51,9 @@ export const api = {
   loadEnvironment: (name: string) => call<Environment>("load_environment", { name }),
   saveEnvironment: (environment: Environment) =>
     call<void>("save_environment", { environment }),
+  deleteEnvironment: (name: string) => call<WorkspaceInfo>("delete_environment", { name }),
+  /** Every `{{name}}` that would resolve right now; secrets appear as `secret:NAME`. */
+  variableNames: () => call<string[]>("variable_names"),
 
   // --- secrets (names only ever cross this boundary) ---
   secretNames: () => call<string[]>("secret_names"),

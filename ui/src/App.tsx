@@ -9,25 +9,107 @@ import {
   type ScanResult,
   type WorkspaceInfo,
 } from "./types";
+import { VariablesContext } from "./variables";
+import { EnvironmentDialog } from "./components/EnvironmentDialog";
 import { ImportDialog } from "./components/ImportDialog";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseViewer } from "./components/ResponseViewer";
 import { Sidebar } from "./components/Sidebar";
+import { TabStrip } from "./components/TabStrip";
+
+/** One open request. Everything a tab shows lives here, so switching tabs loses nothing. */
+interface Tab {
+  id: string;
+  request: RequestDraft;
+  exchange: Exchange | null;
+  error: string | null;
+  sending: boolean;
+  /** The request as last opened or saved, for the unsaved-changes dot. */
+  saved: string;
+}
+
+function newTab(request: RequestDraft): Tab {
+  return {
+    id: crypto.randomUUID(),
+    request,
+    exchange: null,
+    error: null,
+    sending: false,
+    saved: JSON.stringify(request),
+  };
+}
+
+function describe(e: unknown): string {
+  return e instanceof CoreError ? e.message : String(e);
+}
 
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
-  const [request, setRequest] = useState<RequestDraft>(emptyRequest);
-  const [exchange, setExchange] = useState<Exchange | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const [tabs, setTabs] = useState<Tab[]>(() => [newTab(emptyRequest())]);
+  const [activeId, setActiveId] = useState<string>(() => "");
   const [importing, setImporting] = useState(false);
+  const [managingEnvironments, setManagingEnvironments] = useState(false);
   const [saveTarget, setSaveTarget] = useState("Saved");
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [variableNames, setVariableNames] = useState<string[]>([]);
   // Bumped to make the sidebar reload after something writes to the workspace.
   const [refreshKey, setRefreshKey] = useState(0);
 
   const refresh = useCallback(() => setRefreshKey((n) => n + 1), []);
+
+  // The first tab is created before state exists, so adopt it once.
+  useEffect(() => {
+    if (!activeId && tabs[0]) setActiveId(tabs[0].id);
+  }, [activeId, tabs]);
+
+  const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+
+  function updateTab(id: string, changes: Partial<Tab>) {
+    setTabs((current) => current.map((t) => (t.id === id ? { ...t, ...changes } : t)));
+  }
+
+  function openTab(request: RequestDraft, matchOn?: (tab: Tab) => boolean) {
+    // Re-use an untouched tab that already shows the same thing, otherwise open a new one.
+    const existing = matchOn ? tabs.find((t) => matchOn(t) && t.saved === JSON.stringify(t.request)) : undefined;
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    // A pristine blank tab is replaced rather than left behind.
+    const blank = active && !active.request.url && active.saved === JSON.stringify(active.request);
+    const tab = newTab(request);
+    setTabs((current) => (blank ? current.map((t) => (t.id === active.id ? tab : t)) : [...current, tab]));
+    setActiveId(tab.id);
+  }
+
+  function closeTab(id: string) {
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    if (tab.saved !== JSON.stringify(tab.request) && !window.confirm("Close this tab and discard its unsaved changes?")) {
+      return;
+    }
+    const index = tabs.findIndex((t) => t.id === id);
+    const remaining = tabs.filter((t) => t.id !== id);
+    if (remaining.length === 0) {
+      const blank = newTab(emptyRequest());
+      setTabs([blank]);
+      setActiveId(blank.id);
+      return;
+    }
+    setTabs(remaining);
+    if (id === activeId) {
+      const neighbour = remaining[Math.min(index, remaining.length - 1)]!;
+      setActiveId(neighbour.id);
+    }
+  }
+
+  const reloadVariables = useCallback(() => {
+    void api
+      .variableNames()
+      .then(setVariableNames)
+      .catch(() => setVariableNames([]));
+  }, []);
 
   // A workspace may already be open if the window was reloaded during development.
   useEffect(() => {
@@ -36,6 +118,11 @@ export default function App() {
       .then(setWorkspace)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (workspace) reloadVariables();
+    else setVariableNames([]);
+  }, [workspace, reloadVariables]);
 
   async function openWorkspace() {
     const picked = await open({ directory: true, multiple: false });
@@ -50,72 +137,89 @@ export default function App() {
       // Discovery is the point of opening a project, so do it without being asked.
       if (info.kind === "project") void runScan();
     } catch (e) {
-      setError(e instanceof CoreError ? e.message : String(e));
+      if (active) updateTab(active.id, { error: describe(e) });
     }
   }
 
   async function runScan() {
     setScanning(true);
-    setError(null);
     try {
       const result = await api.scanProject();
       setScan(result);
       // A scan may have seeded the environment's base_url.
       setWorkspace(await api.workspaceInfo());
     } catch (e) {
-      setError(e instanceof CoreError ? e.message : String(e));
+      if (active) updateTab(active.id, { error: describe(e) });
     } finally {
       setScanning(false);
     }
   }
 
   async function openEndpoint(endpoint: EndpointSpec) {
-    setError(null);
     try {
-      setRequest(await api.openEndpoint(endpoint.id));
-      setExchange(null);
+      const request = await api.openEndpoint(endpoint.id);
+      openTab(request, (t) => t.request.spec_ref === request.spec_ref);
     } catch (e) {
-      setError(e instanceof CoreError ? e.message : String(e));
+      if (active) updateTab(active.id, { error: describe(e) });
     }
   }
 
-  async function send() {
-    setSending(true);
-    setError(null);
+  async function send(tab: Tab) {
+    updateTab(tab.id, { sending: true, error: null });
     try {
-      setExchange(await api.send(request));
+      const exchange = await api.send(tab.request);
+      updateTab(tab.id, { exchange, sending: false });
     } catch (e) {
-      setExchange(null);
-      setError(e instanceof CoreError ? e.message : String(e));
+      updateTab(tab.id, { exchange: null, error: describe(e), sending: false });
     } finally {
-      setSending(false);
       // The send was recorded in history whether it succeeded or not.
       refresh();
     }
   }
 
-  async function save() {
+  async function save(tab: Tab) {
     if (!workspace) return;
     const named: RequestDraft = {
-      ...request,
-      name: request.name ?? `${request.method} ${request.url}`,
+      ...tab.request,
+      name: tab.request.name ?? `${tab.request.method} ${tab.request.url}`,
     };
     try {
       await api.saveRequest(saveTarget, named);
-      setRequest(named);
+      updateTab(tab.id, { request: named, saved: JSON.stringify(named) });
       setWorkspace(await api.workspaceInfo());
       refresh();
     } catch (e) {
-      setError(e instanceof CoreError ? e.message : String(e));
+      updateTab(tab.id, { error: describe(e) });
     }
   }
 
-  // Ctrl/Cmd+Enter sends from anywhere, including inside the body editor.
+  async function importCurl(tab: Tab, text: string) {
+    try {
+      const result = await api.importCurl(text);
+      const request = { ...result.value, id: tab.request.id };
+      updateTab(tab.id, {
+        request,
+        exchange: null,
+        error: result.warnings.length > 0 ? `Imported with warnings: ${result.warnings.join("; ")}` : null,
+      });
+    } catch (e) {
+      updateTab(tab.id, { error: describe(e) });
+    }
+  }
+
+  // Ctrl/Cmd+Enter sends, Ctrl+T opens a tab, Ctrl+W closes one — from anywhere.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key === "Enter" && active && !active.sending && active.request.url) {
         event.preventDefault();
-        if (!sending && request.url) void send();
+        void send(active);
+      } else if (event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        openTab(emptyRequest());
+      } else if (event.key.toLowerCase() === "w" && active) {
+        event.preventDefault();
+        closeTab(active.id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -123,75 +227,110 @@ export default function App() {
   });
 
   return (
-    <div className="flex h-full">
-      <Sidebar
-        workspace={workspace}
-        refreshKey={refreshKey}
-        onOpenWorkspace={openWorkspace}
-        onImport={() => setImporting(true)}
-        onWorkspaceChange={setWorkspace}
-        scan={scan}
-        scanning={scanning}
-        onScan={runScan}
-        onOpenEndpoint={openEndpoint}
-        onOpenRequest={(saved) => {
-          setRequest(saved);
-          setExchange(null);
-          setError(null);
-        }}
-      />
-
-      <main className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-edge px-3 py-2">
-          <input
-            value={request.name ?? ""}
-            onChange={(e) => setRequest({ ...request, name: e.target.value || null })}
-            placeholder="Untitled request"
-            className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-2 py-1
-              font-semibold outline-none placeholder:text-muted/60 focus:border-edge focus:bg-panel"
-          />
-
-          <input
-            value={saveTarget}
-            onChange={(e) => setSaveTarget(e.target.value)}
-            title="Collection to save into"
-            className="w-32 shrink-0 rounded border border-edge bg-panel px-2 py-1 outline-none focus:border-accent"
-          />
-          <button
-            onClick={save}
-            disabled={!workspace || !request.url}
-            className="shrink-0 rounded bg-raised px-3 py-1 transition hover:brightness-125 disabled:opacity-40"
-          >
-            Save
-          </button>
-        </div>
-
-        <RequestEditor
-          request={request}
-          onChange={setRequest}
-          onSend={send}
-          sending={sending}
+    <VariablesContext.Provider value={variableNames}>
+      <div className="flex h-full">
+        <Sidebar
+          workspace={workspace}
+          refreshKey={refreshKey}
+          onOpenWorkspace={openWorkspace}
+          onImport={() => setImporting(true)}
+          onWorkspaceChange={setWorkspace}
+          onManageEnvironments={() => setManagingEnvironments(true)}
+          scan={scan}
+          scanning={scanning}
+          onScan={runScan}
+          onOpenEndpoint={openEndpoint}
+          onOpenRequest={(saved) => openTab(saved, (t) => t.request.id === saved.id)}
         />
 
-        <div className="flex min-h-0 flex-[1.2] flex-col">
-          <ResponseViewer exchange={exchange} error={error} sending={sending} />
-        </div>
-      </main>
+        <main className="flex min-w-0 flex-1 flex-col">
+          <TabStrip
+            tabs={tabs.map((t) => ({
+              id: t.id,
+              request: t.request,
+              dirty: t.saved !== JSON.stringify(t.request),
+            }))}
+            activeId={active?.id ?? null}
+            onActivate={setActiveId}
+            onClose={closeTab}
+            onNew={() => openTab(emptyRequest())}
+          />
 
-      {importing && (
-        <ImportDialog
-          onClose={() => setImporting(false)}
-          onCollectionsChanged={async () => {
-            setWorkspace(await api.workspaceInfo());
-            refresh();
-          }}
-          onImported={(imported) => {
-            setRequest(imported);
-            setExchange(null);
-            setError(null);
-          }}
-        />
-      )}
-    </div>
+          {active && (
+            <>
+              <div className="flex shrink-0 items-center gap-2 border-b border-edge px-3 py-2">
+                <input
+                  value={active.request.name ?? ""}
+                  onChange={(e) =>
+                    updateTab(active.id, {
+                      request: { ...active.request, name: e.target.value || null },
+                    })
+                  }
+                  placeholder="Untitled request"
+                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-2 py-1
+                    font-semibold outline-none placeholder:text-muted/60 focus:border-edge focus:bg-panel"
+                />
+
+                <input
+                  value={saveTarget}
+                  onChange={(e) => setSaveTarget(e.target.value)}
+                  title="Collection to save into"
+                  className="w-32 shrink-0 rounded border border-edge bg-panel px-2 py-1 outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => save(active)}
+                  disabled={!workspace || !active.request.url}
+                  className="shrink-0 rounded bg-raised px-3 py-1 transition hover:brightness-125 disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </div>
+
+              <RequestEditor
+                key={active.id}
+                request={active.request}
+                onChange={(request) => updateTab(active.id, { request })}
+                onSend={() => send(active)}
+                onCurl={(text) => importCurl(active, text)}
+                sending={active.sending}
+              />
+
+              <div className="flex min-h-0 flex-[1.2] flex-col">
+                <ResponseViewer
+                  exchange={active.exchange}
+                  error={active.error}
+                  sending={active.sending}
+                />
+              </div>
+            </>
+          )}
+        </main>
+
+        {importing && (
+          <ImportDialog
+            onClose={() => setImporting(false)}
+            onCollectionsChanged={async () => {
+              setWorkspace(await api.workspaceInfo());
+              refresh();
+            }}
+            onImported={(imported) => openTab(imported)}
+          />
+        )}
+
+        {managingEnvironments && workspace && (
+          <EnvironmentDialog
+            workspace={workspace}
+            onClose={() => {
+              setManagingEnvironments(false);
+              reloadVariables();
+            }}
+            onWorkspaceChange={(info) => {
+              setWorkspace(info);
+              reloadVariables();
+            }}
+          />
+        )}
+      </div>
+    </VariablesContext.Provider>
   );
 }

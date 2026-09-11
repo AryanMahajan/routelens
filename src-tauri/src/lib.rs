@@ -102,6 +102,21 @@ async fn set_environment(
 }
 
 #[tauri::command]
+async fn delete_environment(
+    state: State<'_, AppState>,
+    name: String,
+) -> CommandResult<WorkspaceInfo> {
+    let mut app = state.app.lock().await;
+    app.delete_environment(&name)?;
+    Ok(app.info()?)
+}
+
+#[tauri::command]
+async fn variable_names(state: State<'_, AppState>) -> CommandResult<Vec<String>> {
+    Ok(state.app.lock().await.variable_names()?)
+}
+
+#[tauri::command]
 async fn load_environment(state: State<'_, AppState>, name: String) -> CommandResult<Environment> {
     Ok(state.app.lock().await.load_environment(&name)?)
 }
@@ -288,6 +303,8 @@ pub fn run() {
             secret_names,
             set_secret,
             delete_secret,
+            delete_environment,
+            variable_names,
             load_collection,
             save_request,
             scan_project,

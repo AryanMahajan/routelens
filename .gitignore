@@ -34,3 +34,6 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# Workspaces created by opening a fixture in the app while testing.
+tests/fixtures/**/.routelens/

@@ -172,6 +172,7 @@ impl RouteLens {
         self.active_environment = workspace.manifest().default_environment.clone();
         self.workspace = Some(workspace);
         self.last_scan = None;
+        self.ensure_an_environment()?;
         self.info()
     }
 
@@ -184,7 +185,28 @@ impl RouteLens {
         let workspace = Workspace::create(root, name, kind)?;
         self.active_environment = None;
         self.workspace = Some(workspace);
+        self.ensure_an_environment()?;
         self.info()
+    }
+
+    /// A workspace with no environment cannot resolve `{{base_url}}`, and every discovered
+    /// request uses it. So there is always one — `local` — created on first open and made
+    /// the default. Nothing is overwritten: an existing default is respected, and an
+    /// existing environment with no default becomes it.
+    fn ensure_an_environment(&mut self) -> Result<()> {
+        if self.active_environment.is_some() {
+            return Ok(());
+        }
+        let existing = self.workspace()?.environment_names()?;
+        let name = match existing.first() {
+            Some(name) => name.clone(),
+            None => {
+                let environment = Environment::new("local");
+                self.workspace()?.save_environment(&environment)?;
+                "local".to_string()
+            }
+        };
+        self.set_active_environment(Some(&name))
     }
 
     pub fn open_or_create_workspace(
@@ -245,13 +267,49 @@ impl RouteLens {
     }
 
     /// Switch environments, refusing a name that does not exist rather than silently
-    /// falling back to no variables at all.
+    /// falling back to no variables at all. The choice is remembered as the workspace's
+    /// default, so the next open lands in the same environment.
     pub fn set_active_environment(&mut self, name: Option<&str>) -> Result<()> {
         if let Some(name) = name {
             self.workspace()?.load_environment(name)?;
         }
         self.active_environment = name.map(str::to_string);
+
+        let workspace = self.workspace.as_mut().ok_or(CoreError::NoWorkspace)?;
+        if workspace.manifest().default_environment.as_deref() != name {
+            workspace.manifest_mut().default_environment = name.map(str::to_string);
+            workspace.save()?;
+        }
         Ok(())
+    }
+
+    /// Remove an environment. If it was active, the first remaining one takes over — or
+    /// none, which the UI then shows as such.
+    pub fn delete_environment(&mut self, name: &str) -> Result<()> {
+        self.workspace()?.delete_environment(name)?;
+        if self.active_environment.as_deref() == Some(name) {
+            let remaining = self.workspace()?.environment_names()?;
+            let next = remaining.first().cloned();
+            self.set_active_environment(next.as_deref())?;
+        }
+        Ok(())
+    }
+
+    /// Every name a `{{…}}` reference could use right now, for autocomplete.
+    ///
+    /// Secrets are listed as `secret:NAME` — names only, never values.
+    pub fn variable_names(&self) -> Result<Vec<String>> {
+        let ctx = self.variables()?;
+        let mut names: Vec<String> = ctx
+            .globals
+            .keys()
+            .chain(ctx.environment.keys())
+            .cloned()
+            .collect();
+        names.extend(ctx.secrets.keys().map(|k| format!("secret:{k}")));
+        names.sort();
+        names.dedup();
+        Ok(names)
     }
 
     pub fn load_environment(&self, name: &str) -> Result<Environment> {
@@ -600,8 +658,43 @@ mod tests {
     #[test]
     fn switching_to_an_unknown_environment_is_refused() {
         let (_dir, mut app) = app();
+        let before = app.active_environment().map(str::to_string);
         assert!(app.set_active_environment(Some("nope")).is_err());
-        assert_eq!(app.active_environment(), None);
+        assert_eq!(
+            app.active_environment(),
+            before.as_deref(),
+            "nothing changed"
+        );
+    }
+
+    /// Every discovered request uses `{{base_url}}`, so a workspace must always have an
+    /// environment to hold it — and reopening must land in the one that was chosen.
+    #[test]
+    fn a_new_workspace_gets_a_local_environment_that_is_remembered() {
+        let dir = TempDir::new().unwrap();
+        let mut app = RouteLens::new();
+        let info = app
+            .create_workspace(dir.path(), "t", WorkspaceKind::Standalone)
+            .unwrap();
+        assert_eq!(info.environments, vec!["local"]);
+        assert_eq!(info.active_environment.as_deref(), Some("local"));
+
+        let mut staging = Environment::new("staging");
+        staging.set("base_url", "https://staging.example.com");
+        app.save_environment(&staging).unwrap();
+        app.set_active_environment(Some("staging")).unwrap();
+
+        let mut reopened = RouteLens::new();
+        let info = reopened.open_workspace(dir.path()).unwrap();
+        assert_eq!(info.active_environment.as_deref(), Some("staging"));
+
+        reopened.delete_environment("staging").unwrap();
+        assert_eq!(reopened.active_environment(), Some("local"));
+        assert_eq!(
+            reopened.variable_names().unwrap(),
+            Vec::<String>::new(),
+            "local has no variables until a scan seeds base_url"
+        );
     }
 
     #[test]

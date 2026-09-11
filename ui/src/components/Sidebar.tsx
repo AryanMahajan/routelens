@@ -20,6 +20,7 @@ export function Sidebar({
   onOpenWorkspace,
   onImport,
   onWorkspaceChange,
+  onManageEnvironments,
   refreshKey,
   scan,
   scanning,
@@ -31,6 +32,7 @@ export function Sidebar({
   onOpenWorkspace: () => void;
   onImport: () => void;
   onWorkspaceChange: (info: WorkspaceInfo) => void;
+  onManageEnvironments: () => void;
   refreshKey: number;
   scan: ScanResult | null;
   scanning: boolean;
@@ -98,21 +100,30 @@ export function Sidebar({
               </button>
             </div>
 
-            <select
-              value={workspace.active_environment ?? ""}
-              onChange={async (e) => {
-                const name = e.target.value || null;
-                onWorkspaceChange(await api.setEnvironment(name));
-              }}
-              className="mt-2 w-full rounded border border-edge bg-ground px-2 py-1 outline-none focus:border-accent"
-            >
-              <option value="">No environment</option>
-              {workspace.environments.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <div className="mt-2 flex gap-1">
+              <select
+                value={workspace.active_environment ?? ""}
+                onChange={async (e) => {
+                  const name = e.target.value || null;
+                  onWorkspaceChange(await api.setEnvironment(name));
+                }}
+                className="min-w-0 flex-1 rounded border border-edge bg-ground px-2 py-1 outline-none focus:border-accent"
+              >
+                <option value="">No environment</option>
+                {workspace.environments.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={onManageEnvironments}
+                title="Variables and secrets"
+                className="shrink-0 rounded border border-edge bg-ground px-2 font-mono text-[11px] text-muted transition hover:text-ink"
+              >
+                {"{{ }}"}
+              </button>
+            </div>
 
             {workspace.missing_secrets.length > 0 && (
               <p className="mt-2 rounded border border-method-post/30 bg-method-post/5 px-2 py-1 text-[11px] text-method-post">

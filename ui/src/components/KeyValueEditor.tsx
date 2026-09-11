@@ -1,4 +1,5 @@
 import type { KeyValue } from "../types";
+import { VariableInput } from "./VariableInput";
 
 /**
  * The query / header / cookie table.
@@ -57,12 +58,11 @@ export function KeyValueEditor({
               outline-none placeholder:text-muted/60 focus:border-edge focus:bg-ground
               ${row.enabled ? "" : "text-muted line-through"}`}
           />
-          <input
+          <VariableInput
             value={row.value}
-            onChange={(e) => update(index, { value: e.target.value })}
+            onChange={(value) => update(index, { value })}
             placeholder={valuePlaceholder}
-            spellCheck={false}
-            className={`min-w-0 flex-1 rounded border border-transparent bg-transparent px-2 py-1 font-mono
+            className={`rounded border border-transparent bg-transparent px-2 py-1 font-mono
               outline-none placeholder:text-muted/60 focus:border-edge focus:bg-ground
               ${row.enabled ? "" : "text-muted line-through"}`}
           />
