@@ -33,8 +33,14 @@ double quotes, line continuations, and `$'...'` escapes, and a naive split on wh
 mangles them.
 
 1. **Tokenize** — POSIX shell word splitting: single quotes, double quotes with escapes,
-   `$'...'` ANSI-C quoting, backslash line continuations, comments.
+   `$'...'` ANSI-C quoting, backslash line continuations, comments. Chrome's
+   **"Copy as cURL (cmd)"** on Windows is recognised automatically and split by `cmd.exe`
+   rules instead: `^"` quotes, `^%` / `^$` escapes, `^` line continuations, and `^\^"`
+   for a quote inside a quoted argument.
 2. **Parse flags** — map tokens onto request fields.
+
+In the app there is no import step for cURL at all: paste the command into the URL bar
+and it becomes the request.
 
 ### Supported flags
 

@@ -14,6 +14,7 @@ export function ResponseViewer({
 }) {
   const [tab, setTab] = useState<Tab>("body");
   const [raw, setRaw] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const pretty = useMemo(() => {
     if (!exchange) return null;
@@ -121,13 +122,30 @@ export function ResponseViewer({
           </button>
         ))}
 
-        {tab === "body" && pretty && (
-          <button
-            onClick={() => setRaw(!raw)}
-            className="ml-auto rounded px-2 py-1 text-muted transition hover:bg-raised hover:text-ink"
-          >
-            {raw ? "Pretty" : "Raw"}
-          </button>
+        {tab === "body" && (
+          <div className="ml-auto flex items-center gap-1">
+            {pretty && (
+              <button
+                onClick={() => setRaw(!raw)}
+                className="rounded px-2 py-1 text-muted transition hover:bg-raised hover:text-ink"
+              >
+                {raw ? "Pretty" : "Raw"}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const text = (raw ? null : pretty) ?? response.body.bytes;
+                void navigator.clipboard.writeText(text).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1200);
+                });
+              }}
+              title="Copy the body as shown"
+              className="rounded px-2 py-1 text-muted transition hover:bg-raised hover:text-ink"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
         )}
       </div>
 

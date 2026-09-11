@@ -1,9 +1,14 @@
-//! POSIX shell word splitting.
+//! Shell word splitting — POSIX, and Windows `cmd.exe`.
 //!
 //! cURL commands are pasted from browser devtools, terminal history, and documentation, and
 //! they arrive full of quoting: single quotes around JSON, `$'...'` escapes, backslash line
 //! continuations, embedded newlines. Splitting on whitespace mangles all of it, so this runs
 //! first and flag parsing works on real words.
+//!
+//! Chrome on Windows offers "Copy as cURL (cmd)", which escapes for `cmd.exe` instead:
+//! `^"` for a quote, `^%` for a percent sign, `^` before a newline to continue, and `^\^"`
+//! for a literal quote inside a quoted argument. That dialect is detected and handled by
+//! [`tokenize`] too, since nobody should have to know which one they copied.
 
 use std::iter::Peekable;
 use std::str::Chars;
@@ -14,8 +19,93 @@ pub enum ShellError {
     UnterminatedQuote { quote: char },
 }
 
-/// Split a command line into words.
+/// Split a command line into words, in whichever shell's quoting it was written for.
 pub fn tokenize(input: &str) -> Result<Vec<String>, ShellError> {
+    if looks_like_cmd(input) {
+        return tokenize_cmd(input);
+    }
+    tokenize_posix(input)
+}
+
+/// `cmd.exe` escaping is unmistakable: `^"` never appears in a POSIX command line, where a
+/// caret is an ordinary character and would sit inside quotes rather than before them.
+fn looks_like_cmd(input: &str) -> bool {
+    input.contains("^\"")
+}
+
+/// Split a `cmd.exe` command line.
+///
+/// Two layers, applied the way Windows does: `cmd.exe` strips carets (`^x` → `x`, and a
+/// caret before a newline continues the line), then the C runtime splits what is left,
+/// where `"` toggles quoting and `\"` is a literal quote. Single quotes mean nothing.
+fn tokenize_cmd(input: &str) -> Result<Vec<String>, ShellError> {
+    // Layer one: the caret.
+    let mut unescaped = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '^' {
+            unescaped.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('\r') => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                unescaped.push(' ');
+            }
+            Some('\n') => unescaped.push(' '),
+            Some(next) => unescaped.push(next),
+            None => unescaped.push('^'),
+        }
+    }
+
+    // Layer two: the C runtime's argv rules.
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_word = false;
+    let mut chars = unescaped.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            ' ' | '\t' | '\r' | '\n' => {
+                if in_word {
+                    tokens.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            '"' => {
+                in_word = true;
+                loop {
+                    match chars.next() {
+                        Some('"') => break,
+                        Some('\\') if chars.peek() == Some(&'"') => {
+                            chars.next();
+                            current.push('"');
+                        }
+                        Some(ch) => current.push(ch),
+                        None => return Err(ShellError::UnterminatedQuote { quote: '"' }),
+                    }
+                }
+            }
+            '\\' if chars.peek() == Some(&'"') => {
+                chars.next();
+                current.push('"');
+                in_word = true;
+            }
+            _ => {
+                current.push(c);
+                in_word = true;
+            }
+        }
+    }
+    if in_word {
+        tokens.push(current);
+    }
+    Ok(tokens)
+}
+
+/// Split a POSIX shell command line.
+fn tokenize_posix(input: &str) -> Result<Vec<String>, ShellError> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     // Tracks whether a word has *started*, which is how `''` survives as an empty argument
@@ -193,6 +283,37 @@ fn push_ansi_escape(chars: &mut Peekable<Chars<'_>>, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Chrome's "Copy as cURL (cmd)" on Windows, trimmed. Every escape it uses is here:
+    /// `^"` quotes, `^%` in the cookie, `^$` in the body, `^\^"` for quotes inside a
+    /// header, and `^` line continuations.
+    #[test]
+    fn cmd_dialect_from_chrome_on_windows() {
+        let input = "curl --url ^\"https://example.com/a^\" ^\r\n  -H ^\"accept: */*^\" ^\r\n  -b ^\"k=^%^7B^%^22x^%^22^%^7D^\" ^\r\n  -H ^\"sec-ch-ua: ^\\^\"Chromium^\\^\";v=^\\^\"152^\\^\"^\" ^\r\n  --data-raw ^\"a^$b+c^\"";
+        let tokens = tokenize(input).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                "curl",
+                "--url",
+                "https://example.com/a",
+                "-H",
+                "accept: */*",
+                "-b",
+                "k=%7B%22x%22%7D",
+                "-H",
+                "sec-ch-ua: \"Chromium\";v=\"152\"",
+                "--data-raw",
+                "a$b+c",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_caret_in_a_posix_command_is_just_a_character() {
+        assert_eq!(tokenize("curl 'a^b'").unwrap(), vec!["curl", "a^b"]);
+        assert_eq!(tokenize("curl a^b").unwrap(), vec!["curl", "a^b"]);
+    }
 
     fn t(input: &str) -> Vec<String> {
         tokenize(input).unwrap()

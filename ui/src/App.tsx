@@ -207,13 +207,17 @@ export default function App() {
     }
   }
 
-  // Ctrl/Cmd+Enter sends, Ctrl+T opens a tab, Ctrl+W closes one — from anywhere.
+  // Ctrl/Cmd+Enter sends, Ctrl+S saves, Ctrl+T opens a tab, Ctrl+W closes one — from
+  // anywhere, including inside an input.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key === "Enter" && active && !active.sending && active.request.url) {
         event.preventDefault();
         void send(active);
+      } else if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (active && workspace && active.request.url) void save(active);
       } else if (event.key.toLowerCase() === "t") {
         event.preventDefault();
         openTab(emptyRequest());
@@ -280,6 +284,7 @@ export default function App() {
                 <button
                   onClick={() => save(active)}
                   disabled={!workspace || !active.request.url}
+                  title="Ctrl+S"
                   className="shrink-0 rounded bg-raised px-3 py-1 transition hover:brightness-125 disabled:opacity-40"
                 >
                   Save

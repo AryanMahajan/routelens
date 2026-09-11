@@ -81,6 +81,7 @@ export function RequestEditor({
         <button
           onClick={onSend}
           disabled={sending || !request.url}
+          title="Ctrl+Enter"
           className="shrink-0 rounded bg-accent px-4 py-1.5 font-semibold text-ground transition
             hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
