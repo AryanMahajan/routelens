@@ -61,7 +61,15 @@ export default function App() {
   // Bumped to make the sidebar reload after something writes to the workspace.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refresh = useCallback(() => setRefreshKey((n) => n + 1), []);
+  // Anything that wrote to the workspace: reload the collection/environment names as
+  // well as the panels, or a collection created just now is never listed.
+  const refresh = useCallback(() => {
+    setRefreshKey((n) => n + 1);
+    void api
+      .workspaceInfo()
+      .then(setWorkspace)
+      .catch(() => {});
+  }, []);
 
   // The first tab is created before state exists, so adopt it once.
   useEffect(() => {
