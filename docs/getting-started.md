@@ -9,8 +9,8 @@
 git clone https://github.com/AryanMahajan/routelens.git
 cd routelens
 npm install --prefix ui
-npm run tauri dev --prefix ui      # development build, hot-reloading UI
-npm run tauri build --prefix ui    # installer / bundle *(untested so far)*
+npm run tauri dev                  # development build, hot-reloading UI
+npm run tauri build                # installer / bundle *(untested so far)*
 ```
 
 The first `dev` compiles the Rust side, which takes a few minutes; afterwards it is seconds.
