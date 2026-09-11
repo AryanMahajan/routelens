@@ -1,0 +1,5 @@
+# Keep every text file LF in the repository, whatever the editor or OS did locally.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
