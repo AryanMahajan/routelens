@@ -30,6 +30,14 @@ const MAX_ALIAS_HOPS: usize = 16;
 pub enum GraphWarning {
     /// A `include_router(x)` whose `x` could not be traced to a declaration.
     UnresolvedReference { module: PathBuf, name: String },
+    /// A mounted name that is neither declared nor imported from inside the project — a
+    /// router from an installed package, or the result of a call. Nothing can be listed
+    /// under it, and that is worth knowing.
+    UndeclaredMount { module: PathBuf, name: String },
+    /// Routes were registered on a name that is not a declared router — usually a function
+    /// parameter, as in `def register(app): app.add_url_rule(...)`. They are listed as
+    /// orphans, because where they end up mounted cannot be known statically.
+    UndeclaredRouter { symbol: String, routes: usize },
     /// A router was declared but never mounted, so its routes may be unreachable.
     ///
     /// Kept and reported rather than dropped: this is usually a bug in the project being
@@ -48,6 +56,15 @@ impl std::fmt::Display for GraphWarning {
                 f,
                 "could not trace `{name}` in {} to a router declaration",
                 crate::project::display(module)
+            ),
+            GraphWarning::UndeclaredMount { module, name } => write!(
+                f,
+                "`{name}` is mounted in {} but declared nowhere in the project, so nothing is listed under it",
+                crate::project::display(module)
+            ),
+            GraphWarning::UndeclaredRouter { symbol, routes } => write!(
+                f,
+                "{routes} route(s) are registered on `{symbol}`, which is not declared there — probably a parameter; their full paths are unknown"
             ),
             GraphWarning::OrphanedRouter { symbol } => {
                 write!(
@@ -134,6 +151,11 @@ impl RegistrationGraph {
 
     pub fn router_count(&self) -> usize {
         self.routers.len()
+    }
+
+    /// The application objects — where resolution starts, and what runtime enrich imports.
+    pub fn app_roots(&self) -> impl Iterator<Item = &RouterFact> {
+        self.routers.values().filter(|r| r.is_app_root)
     }
 
     /// Trace a reference back to the symbol it names.
@@ -243,6 +265,13 @@ impl RegistrationGraph {
                 });
                 continue;
             };
+            if !self.routers.contains_key(&child) && !routes_by_router.contains_key(&child) {
+                warnings.push(GraphWarning::UndeclaredMount {
+                    module: mount.child.module.clone(),
+                    name: mount.child.name.clone(),
+                });
+                continue;
+            }
             mounts_by_parent
                 .entry(parent)
                 .or_default()
@@ -266,6 +295,8 @@ impl RegistrationGraph {
                 &PathTemplate::empty(),
                 None,
                 None,
+                &[],
+                false,
                 &routes_by_router,
                 &mounts_by_parent,
                 &mut stack,
@@ -280,14 +311,24 @@ impl RegistrationGraph {
         let unreached: Vec<SymbolId> = self
             .routers
             .keys()
+            .chain(routes_by_router.keys())
             .filter(|symbol| !reached.contains(*symbol))
             .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect();
 
         for symbol in unreached {
-            warnings.push(GraphWarning::OrphanedRouter {
-                symbol: symbol.to_string(),
-            });
+            if self.routers.contains_key(&symbol) {
+                warnings.push(GraphWarning::OrphanedRouter {
+                    symbol: symbol.to_string(),
+                });
+            } else {
+                warnings.push(GraphWarning::UndeclaredRouter {
+                    symbol: symbol.to_string(),
+                    routes: routes_by_router.get(&symbol).map_or(0, Vec::len),
+                });
+            }
             let mut stack = Vec::new();
             let mut orphan_reached = BTreeSet::new();
             self.walk(
@@ -295,6 +336,8 @@ impl RegistrationGraph {
                 &PathTemplate::empty(),
                 None,
                 None,
+                &[],
+                false,
                 &routes_by_router,
                 &mounts_by_parent,
                 &mut stack,
@@ -318,6 +361,8 @@ impl RegistrationGraph {
         prefix: &PathTemplate,
         group: Option<&str>,
         auth: Option<&rl_model::AuthRequirement>,
+        allowed_methods: &[rl_model::HttpMethod],
+        skip_own_prefix: bool,
         routes_by_router: &BTreeMap<SymbolId, Vec<usize>>,
         mounts_by_parent: &BTreeMap<SymbolId, Vec<(SymbolId, &MountFact)>>,
         stack: &mut Vec<SymbolId>,
@@ -346,13 +391,20 @@ impl RegistrationGraph {
 
         let declared = self.routers.get(symbol);
         let own_prefix = declared.map(|r| r.prefix.clone()).unwrap_or_default();
-        let base = prefix.join(&own_prefix);
+        let base = if skip_own_prefix {
+            prefix.clone()
+        } else {
+            prefix.join(&own_prefix)
+        };
         let group = declared.and_then(|r| r.group.as_deref()).or(group);
 
         for index in routes_by_router.get(symbol).into_iter().flatten() {
             let fact = &self.routes[*index];
             let full = base.join(&fact.path);
             for method in &fact.methods {
+                if !allowed_methods.is_empty() && !allowed_methods.contains(method) {
+                    continue;
+                }
                 out.push(ResolvedRoute {
                     method: method.clone(),
                     path: full.clone(),
@@ -370,11 +422,18 @@ impl RegistrationGraph {
             // The nearest mount's auth wins, so a public sub-router under a guarded one
             // still shows the guard it actually sits behind.
             let child_auth = mount.auth.as_ref().or(auth);
+            let child_methods = if mount.methods.is_empty() {
+                allowed_methods
+            } else {
+                &mount.methods
+            };
             self.walk(
                 child,
                 &mounted_at,
                 child_group,
                 child_auth,
+                child_methods,
+                mount.replaces_child_prefix,
                 routes_by_router,
                 mounts_by_parent,
                 stack,
@@ -465,6 +524,7 @@ mod tests {
             prefix: PathTemplate::empty(),
             group: None,
             is_app_root: true,
+            factory: None,
             span: Span::new(1, 1),
         }
     }
@@ -475,6 +535,7 @@ mod tests {
             prefix: path(prefix),
             group: group.map(str::to_string),
             is_app_root: false,
+            factory: None,
             span: Span::new(1, 1),
         }
     }
@@ -495,6 +556,8 @@ mod tests {
             prefix: path(prefix),
             group: None,
             auth: None,
+            methods: Vec::new(),
+            replaces_child_prefix: false,
             span: Span::new(1, 1),
         }
     }

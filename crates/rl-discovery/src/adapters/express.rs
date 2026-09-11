@@ -248,6 +248,7 @@ impl Extractor<'_, '_> {
                 group_from_file(&self.file.path)
             },
             is_app_root,
+            factory: None,
             span: self.span(node),
         });
     }
@@ -523,6 +524,8 @@ impl Extractor<'_, '_> {
                 prefix: prefix.clone(),
                 group: None,
                 auth: auth.clone(),
+                methods: Vec::new(),
+                replaces_child_prefix: false,
                 span: self.span(call),
             });
         }

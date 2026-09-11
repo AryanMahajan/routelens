@@ -107,6 +107,9 @@ pub struct RouterFact {
     pub group: Option<String>,
     /// This symbol is an application root, so path resolution starts here.
     pub is_app_root: bool,
+    /// The function an application root is created inside — `create_app` in an app
+    /// factory. Runtime enrich needs to call it rather than import it.
+    pub factory: Option<String>,
     pub span: Span,
 }
 
@@ -159,6 +162,16 @@ pub struct MountFact {
     /// adminRouter)`, `include_router(r, dependencies=[Depends(auth)])`. Inherited by
     /// every route reached through this mount that declares none of its own.
     pub auth: Option<AuthRequirement>,
+    /// Only these methods are served through this mount; empty means all of them. Flask's
+    /// `add_url_rule("/notes", view_func=NoteAPI.as_view(), methods=["GET"])` narrows a
+    /// class-based view to one of its methods at one rule.
+    pub methods: Vec<HttpMethod>,
+    /// The mount's prefix *replaces* the child's own prefix instead of being joined in
+    /// front of it. Flask's `register_blueprint(bp, url_prefix="/x")` overrides the
+    /// `url_prefix` the blueprint was declared with; FastAPI's `include_router(prefix=)`
+    /// composes with the router's. The graph must not have to know which framework it is
+    /// walking, so the adapter says which it meant.
+    pub replaces_child_prefix: bool,
     pub span: Span,
 }
 

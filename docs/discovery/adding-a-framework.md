@@ -61,6 +61,7 @@ sink.router(RouterFact {
     prefix,                  // PathTemplate, possibly containing Unresolved
     group,                   // tags / name, used for tree grouping
     is_app_root,             // true for `app = FastAPI()`, `app = express()`
+    factory,                 // the enclosing function of an app root: `create_app`
     span,
 });
 
@@ -79,6 +80,9 @@ sink.mount(MountFact {
     prefix,
     group,
     auth,                    // a guard on the mount, inherited by every route beneath
+    methods,                 // only these methods pass through; empty means all
+    replaces_child_prefix,   // Flask: `register_blueprint(url_prefix=)` overrides the
+                             // blueprint's own prefix rather than composing with it
     span,
 });
 
@@ -104,13 +108,30 @@ facts against one virtual app root per app, attached with an `ImportFact` whose 
 starts with `/` (project-root-relative, already resolved). The graph is then flat, and the
 resolver handles that case without special-casing.
 
+Class-based views — Flask's `MethodView`, Flask-RESTful's `Resource` — are the reverse
+trick: the *class* is a router whose routes have empty paths (one per `get`/`post`/…
+method), and `add_url_rule("/notes/<int:id>", view_func=NoteAPI.as_view())` is a mount of
+that router at the rule. The class in `views.py` and its registration in `__init__.py` are
+then linked by the import, like any blueprint, and `methods=["GET"]` on the rule is the
+mount's method filter. No new concept was needed.
+
+The graph reports what it could not do: a mount whose child is declared nowhere in the
+project (`UndeclaredMount`), routes on a name that is not a router — typically a function
+parameter (`UndeclaredRouter`, the routes kept as orphans) — and the usual orphans and
+cycles.
+
 ### Shared helpers
 
 Recognition code that is about the *language* rather than the framework lives in
 `adapters/python.rs` and `adapters/js.rs`: constant folding, call arguments, import and
 export collection, and — for JavaScript — what a handler reads off its request object.
-A Flask adapter reuses everything the FastAPI one does; a Koa or Fastify adapter would
-reuse everything Express does.
+The Flask adapter reuses everything the FastAPI one does — constants, arguments, imports,
+docstrings, the auth-name heuristic, the enclosing-function lookup that spots an app
+factory; a Koa or Fastify adapter would reuse everything Express does.
+
+If the framework can describe itself at runtime — a FastAPI `app.openapi()`, a Flask
+`url_map` — extend `crates/rl-discovery/src/enrich/helper.py` rather than writing a second
+extractor. Its output goes through the OpenAPI importer and the merge unchanged.
 
 ### Emitting unknowns
 

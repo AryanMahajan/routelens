@@ -9,7 +9,7 @@ whose snapshot records what is found **and what is expected not to be**.
 | FastAPI | Python | P3 | Implemented |
 | Next.js | TS/JS | P4 | Implemented |
 | Express | JS/TS | P4 | Implemented |
-| Flask | Python | P5 | Planned |
+| Flask | Python | P5 | Implemented |
 | Django / DRF | Python | P6 | Planned |
 
 Every adapter shares the same limits, which come from static analysis itself rather than
@@ -20,7 +20,12 @@ from any one framework:
 - **Routers built inside functions** are found, but the mount that would place them is
   not: they appear as orphans with a warning naming the call that builds them.
 - **Handlers are inspected only within the file that registers them.** A controller
-  defined elsewhere contributes no parameters.
+  defined elsewhere contributes no parameters. (Flask's class-based views are the
+  exception: a `MethodView` is a router in its own right, so its methods are read where
+  the class is declared.)
+- **Routes registered on a function parameter** — `def register(app): app.add_url_rule(…)`
+  — are kept as orphans with a warning, because where that `app` is mounted cannot be
+  known.
 - **Auth is a name-based heuristic.** A middleware or dependency whose name says `auth`,
   `jwt`, `token`, `protect`, `guard`… is taken as a requirement and reported as
   `Unknown` with that name, so the UI can show what was seen rather than a confident
@@ -58,7 +63,7 @@ from any one framework:
   model, not its fields
 - Custom `APIRoute` subclasses that rewrite paths
 
-**Runtime enrich planned (P5)** — `app.openapi()` will supersede every schema gap above.
+**Runtime enrich available** — `app.openapi()` supersedes every schema gap above, and the config-derived prefix becomes a resolved path with its source line kept. See [runtime enrich](runtime-enrich.md).
 
 ---
 
@@ -151,28 +156,57 @@ graph FastAPI uses. Express adds CommonJS/ESM export resolution on top.
 
 ## Flask
 
-**Detected by** `flask` in the manifest, plus a Flask import.
+**Detected by** `flask` in the manifest (+1), plus a `from flask import` in source (+3).
 
-Reuses the Python resolver built for FastAPI; Blueprints map onto the same router concept.
+Reuses the Python resolver built for FastAPI; a `Blueprint` maps onto the same router
+concept. Pinned by `tests/fixtures/flask/` — a runnable application with an app factory,
+nested blueprints, a blueprint registered twice, a config-derived prefix, a `MethodView`
+in another file, an unregistered blueprint, and routes registered in a loop.
 
 **Recognised**
 
-- `@app.route(path, methods=[...])`, defaulting to `GET` when `methods` is omitted
-- `@bp.route(...)` on `Blueprint` instances
-- `Blueprint(name, __name__, url_prefix=...)`
-- `app.register_blueprint(bp, url_prefix=...)`, including nested registration
-- `app.add_url_rule(...)`
-- Werkzeug converters such as `<int:user_id>` and `<path:subpath>`
+- `app = Flask(__name__)`, at module level or inside a factory (`def create_app()`)
+- `Blueprint(name, __name__, url_prefix=...)`; the name becomes the group
+- `@app.route(path, methods=[...])` and `@bp.route(...)`, defaulting to `GET`
+- `@app.get/post/put/patch/delete(...)` shortcuts (Flask ≥ 2.0)
+- `app.register_blueprint(bp, url_prefix=...)`, including nested `bp.register_blueprint(child)`
+- `app.add_url_rule(rule, endpoint, view_func, methods=[...])`
+- Class-based views: `MethodView` subclasses registered with `view_func=X.as_view(...)`
+  (through a local alias too), one route per `get`/`post`/… method; `methods = [...]`
+  narrows them; `decorators = [...]` guards them; `methods=` on the rule narrows that rule
+- Flask-RESTful: `Api(app, prefix=...)`, `api.init_app(app)`, `api.add_resource(Cls, *rules)`
+- Flask-RESTX: `Namespace(name, path=...)`, `api.add_namespace(ns, path=...)`,
+  `@ns.route(...)` on a `Resource` class
+- Werkzeug converters — `<int:user_id>`, `<path:subpath>` (catch-all), `<uuid:id>`
+- Query parameters from `request.args.get("q")` / `request.args["q"]` (the latter
+  required); headers from `request.headers.get(...)`; a JSON body from
+  `request.get_json()` / `request.json` with the keys the handler reads as the example;
+  a form body from `request.form`; multipart from `request.files`
+- Auth from decorators: `@login_required` (session cookie), `@jwt_required()` (bearer),
+  `@basic_auth.login_required` (basic), `@token_required` and anything else whose name
+  says auth (reported as `Unknown` with the name)
+- The handler docstring as the summary
+
+**Prefix semantics, which differ from FastAPI:** `register_blueprint(bp, url_prefix="/x")`
+*replaces* the blueprint's own `url_prefix`; only when none is given does the blueprint's
+apply. Nested blueprints compose. This is what Werkzeug does, and it was found by comparing
+the scan with the fixture's real `url_map` — the adapter says so to the graph through
+`MountFact.replaces_child_prefix`.
 
 **Gaps**
 
-- Schemas — Flask has no built-in schema layer, so only recognisable Marshmallow or
-  Flask-Pydantic usage yields anything
-- Application-factory patterns where the app is built inside a function with conditional
-  blueprint registration
-- `MethodView` and pluggable views are only partially recognised
+- Schemas: Flask has no schema layer, and none is inferred from Marshmallow or Pydantic.
+  Runtime enrich does not add any either — `url_map` knows paths and methods only.
+- Routes registered in a loop or from data are listed as an unresolved orphan (`GET /?`)
+  with a warning, not expanded. Runtime enrich lists them exactly.
+- `@bp.before_request` guards are not read as auth.
+- Flask-RESTX `@ns.expect(model)` / `@ns.doc(...)` are not read.
+- A `view_func` imported from a package outside the project is reported as an
+  undeclared mount and yields nothing.
 
-**Runtime enrich available** — walks `app.url_map` for a complete route list.
+**Runtime enrich available** — walks `app.url_map` for a complete and exact route list,
+including the loop-registered and config-prefixed ones above. See
+[runtime enrich](runtime-enrich.md).
 
 ---
 

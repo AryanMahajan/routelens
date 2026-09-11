@@ -6,6 +6,7 @@
 
 pub mod express;
 pub mod fastapi;
+pub mod flask;
 pub mod js;
 pub mod nextjs;
 pub mod python;
@@ -85,6 +86,7 @@ pub trait FrameworkAdapter {
 pub fn all() -> Vec<Box<dyn FrameworkAdapter>> {
     vec![
         Box::new(fastapi::FastApiAdapter),
+        Box::new(flask::FlaskAdapter),
         Box::new(nextjs::NextJsAdapter),
         Box::new(express::ExpressAdapter),
     ]

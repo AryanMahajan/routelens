@@ -1,11 +1,11 @@
-//! Python helpers shared by the FastAPI and (later) Flask adapters.
+//! Python helpers shared by the FastAPI and Flask adapters.
 //!
 //! Everything here is *recognition* — reading a literal, finding a keyword argument, folding a
 //! constant. Nothing composes a path; that is the graph's job.
 
 use crate::facts::ImportFact;
 use crate::index::{walk, ParsedFile};
-use rl_model::{PathSegment, PathTemplate};
+use rl_model::{AuthRequirement, ParamStyle, PathSegment, PathTemplate};
 use std::collections::BTreeMap;
 use tree_sitter::Node;
 
@@ -109,9 +109,20 @@ impl Constants {
     /// This is the honesty guarantee: an unresolvable prefix becomes a visible gap rather
     /// than a confidently wrong path.
     pub fn path_value(&self, file: &ParsedFile, node: Node<'_>) -> PathTemplate {
+        self.path_value_in(file, node, ParamStyle::Braces)
+    }
+
+    /// [`Constants::path_value`] for a framework with its own parameter syntax — Flask's
+    /// `<int:user_id>`.
+    pub fn path_value_in(
+        &self,
+        file: &ParsedFile,
+        node: Node<'_>,
+        style: ParamStyle,
+    ) -> PathTemplate {
         match self.string_value(file, node) {
             Some(text) => {
-                let mut template = PathTemplate::parse(&text, rl_model::ParamStyle::Braces);
+                let mut template = PathTemplate::parse(&text, style);
                 // `@router.get("/")` under `APIRouter(prefix="/users")` serves `/users/`,
                 // and Starlette answers `/users` with a 307 to it. Werkzeug does the same
                 // for Blueprints. So a bare `/` keeps its slash when joined onto a prefix;
@@ -208,6 +219,84 @@ pub fn callee(file: &ParsedFile, call: Node<'_>) -> Option<(Option<String>, Stri
         }
         _ => None,
     }
+}
+
+/// The name of the function a node sits inside, if any — `create_app` for an app factory.
+pub fn enclosing_function(file: &ParsedFile, node: Node<'_>) -> Option<String> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if parent.kind() == "function_definition" {
+            return parent
+                .child_by_field_name("name")
+                .map(|n| file.text(n).to_string());
+        }
+        current = parent.parent();
+    }
+    None
+}
+
+/// The handler's docstring, used as a summary when the decorator gives none.
+pub fn docstring(file: &ParsedFile, definition: Node<'_>) -> Option<String> {
+    let body = definition.child_by_field_name("body")?;
+    let first = body.named_child(0)?;
+    let expression = if first.kind() == "expression_statement" {
+        first.named_child(0)?
+    } else {
+        first
+    };
+    if expression.kind() != "string" {
+        return None;
+    }
+
+    let text = file.text(expression);
+    let trimmed = text
+        .trim_start_matches(['r', 'b', 'f', 'R', 'B', 'F'])
+        .trim_matches(|c| c == '"' || c == '\'');
+    trimmed
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+/// Guess an auth scheme from the name of a dependency or decorator.
+///
+/// A heuristic, and labelled as one: only names that clearly indicate authentication
+/// count (`Depends(get_db)` is a database session, not a security scheme), and anything
+/// recognised as auth but not as a scheme becomes [`AuthRequirement::Unknown`] carrying
+/// the name rather than a confident claim.
+pub fn auth_from_name(hint: &str) -> Option<AuthRequirement> {
+    let lowered = hint.to_ascii_lowercase();
+
+    if lowered.contains("oauth") || lowered.contains("bearer") || lowered.contains("jwt") {
+        return Some(AuthRequirement::Bearer { format: None });
+    }
+    if lowered.contains("basic") {
+        return Some(AuthRequirement::Basic);
+    }
+    if lowered.contains("api_key") || lowered.contains("apikey") {
+        return Some(AuthRequirement::ApiKey {
+            name: hint.to_string(),
+            location: rl_model::ApiKeyLocation::Header,
+        });
+    }
+    // `get_current_user`, `get_current_admin`, `require_role`, `logged_in_user`,
+    // `login_required`, `token_required`.
+    if lowered.contains("auth")
+        || lowered.contains("current_")
+        || lowered.contains("require")
+        || lowered.contains("logged")
+        || lowered.contains("login")
+        || lowered.contains("token")
+        || lowered.contains("security")
+        || lowered.contains("permission")
+    {
+        return Some(AuthRequirement::Unknown {
+            hint: hint.to_string(),
+        });
+    }
+
+    None
 }
 
 /// Collect every import in a file.

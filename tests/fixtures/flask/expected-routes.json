@@ -1,0 +1,179 @@
+{
+  "frameworks": [
+    "flask"
+  ],
+  "base_url": "http://localhost:5050",
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/users/{user_id}",
+      "group": "users",
+      "source": "app/api/users.py:38",
+      "has_auth": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/notes/{note_id}",
+      "source": "app/api/views.py:19"
+    },
+    {
+      "method": "GET",
+      "path": "/?",
+      "source": "app/api/dynamic.py:8",
+      "orphaned": true,
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/?/reports/by-date/{date}",
+      "group": "reports",
+      "source": "app/api/admin.py:23",
+      "unresolved": true
+    },
+    {
+      "method": "GET",
+      "path": "/?/reports/daily",
+      "group": "reports",
+      "source": "app/api/admin.py:17",
+      "unresolved": true,
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/?/stats",
+      "group": "admin",
+      "source": "app/api/admin.py:11",
+      "unresolved": true,
+      "has_auth": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/",
+      "group": "users",
+      "source": "app/api/users.py:10",
+      "query": [
+        "limit",
+        "q"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/{user_id}",
+      "group": "users",
+      "source": "app/api/users.py:19"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "source": "app/__init__.py:32"
+    },
+    {
+      "method": "GET",
+      "path": "/notes",
+      "source": "app/api/views.py:10"
+    },
+    {
+      "method": "GET",
+      "path": "/notes/{note_id}",
+      "source": "app/api/views.py:10"
+    },
+    {
+      "method": "GET",
+      "path": "/orphan/forgotten",
+      "group": "orphan",
+      "source": "app/api/orphan.py:8",
+      "orphaned": true
+    },
+    {
+      "method": "GET",
+      "path": "/v1/files/{filename}",
+      "group": "items",
+      "source": "app/api/items.py:26"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/items",
+      "group": "items",
+      "source": "app/api/items.py:8"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/items/{sku}",
+      "group": "items",
+      "source": "app/api/items.py:14",
+      "has_body": true
+    },
+    {
+      "method": "GET",
+      "path": "/v2/files/{filename}",
+      "group": "items",
+      "source": "app/api/items.py:26"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/items",
+      "group": "items",
+      "source": "app/api/items.py:8"
+    },
+    {
+      "method": "GET",
+      "path": "/v2/items/{sku}",
+      "group": "items",
+      "source": "app/api/items.py:14",
+      "has_body": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users/",
+      "group": "users",
+      "source": "app/api/users.py:27",
+      "has_body": true,
+      "has_auth": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/users/login",
+      "group": "users",
+      "source": "app/api/users.py:45",
+      "has_body": true
+    },
+    {
+      "method": "PUT",
+      "path": "/notes/{note_id}",
+      "source": "app/api/views.py:15",
+      "has_body": true
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/items/{sku}",
+      "group": "items",
+      "source": "app/api/items.py:14",
+      "has_body": true
+    },
+    {
+      "method": "PUT",
+      "path": "/v2/items/{sku}",
+      "group": "items",
+      "source": "app/api/items.py:14",
+      "has_body": true
+    }
+  ],
+  "warnings": [
+    "router `app/api/orphan.py:bp` is never mounted",
+    "registered on `app/api/dynamic.py:app`, which is not declared there"
+  ],
+  "expected_misses": [
+    {
+      "path": "/dyn/widgets",
+      "reason": "registered in a loop inside `register(app)`; the router is a parameter and the path is an f-string, so it is listed as an unresolved orphan (`GET /?`) rather than expanded. Runtime enrich lists both loop routes exactly."
+    },
+    {
+      "path": "/admin/stats",
+      "reason": "the `/admin` prefix comes from `settings.ADMIN_PREFIX`, which reads an environment variable; shown as `/?/stats`, never guessed."
+    },
+    {
+      "path": "/static/{filename}",
+      "reason": "Flask's built-in static route is served by the framework, not declared in the project. Runtime enrich reports it and RouteLens drops it there too."
+    }
+  ]
+}

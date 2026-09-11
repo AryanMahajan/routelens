@@ -4,7 +4,8 @@
 //! mounts, and `add_api_route` calls — then hands them to the graph. It never joins a path.
 
 use super::python::{
-    callee, collect_imports, first_list_string, list_strings, Arguments, Constants,
+    auth_from_name, callee, collect_imports, docstring, enclosing_function, first_list_string,
+    list_strings, Arguments, Constants,
 };
 use super::{Detection, FrameworkAdapter};
 use crate::facts::{FactSink, MountFact, RouteFact, RouterFact, SymbolId, SymbolRef};
@@ -166,6 +167,11 @@ fn extract_declaration(
         prefix,
         group,
         is_app_root: is_app,
+        factory: if is_app {
+            enclosing_function(file, node)
+        } else {
+            None
+        },
         span: file.span(left),
     });
 }
@@ -202,6 +208,8 @@ fn extract_call(file: &ParsedFile, node: Node<'_>, constants: &Constants, sink: 
                 prefix,
                 group,
                 auth,
+                methods: Vec::new(),
+                replaces_child_prefix: false,
                 span: file.span(node),
             });
         }
@@ -615,59 +623,7 @@ fn auth_from_dependency_call(file: &ParsedFile, node: Node<'_>) -> Option<AuthRe
         .first_positional()
         .map(|n| file.text(n).to_string())
         .unwrap_or_else(|| function.clone());
-    let lowered = hint.to_ascii_lowercase();
-
-    // Only names that clearly indicate authentication count; a `Depends(get_db)` is a
-    // database session, not a security scheme.
-    if lowered.contains("oauth") || lowered.contains("bearer") || lowered.contains("jwt") {
-        return Some(AuthRequirement::Bearer { format: None });
-    }
-    if lowered.contains("basic") {
-        return Some(AuthRequirement::Basic);
-    }
-    if lowered.contains("api_key") || lowered.contains("apikey") {
-        return Some(AuthRequirement::ApiKey {
-            name: hint,
-            location: rl_model::ApiKeyLocation::Header,
-        });
-    }
-    // `get_current_user`, `get_current_admin`, `require_role`, `logged_in_user`.
-    if lowered.contains("auth")
-        || lowered.contains("current_")
-        || lowered.contains("require_")
-        || lowered.contains("logged")
-        || lowered.contains("token")
-        || lowered.contains("security")
-        || lowered.contains("permission")
-    {
-        return Some(AuthRequirement::Unknown { hint });
-    }
-
-    None
-}
-
-/// The handler's docstring, used as a summary when the decorator gives none.
-fn docstring(file: &ParsedFile, definition: Node<'_>) -> Option<String> {
-    let body = definition.child_by_field_name("body")?;
-    let first = body.named_child(0)?;
-    let expression = if first.kind() == "expression_statement" {
-        first.named_child(0)?
-    } else {
-        first
-    };
-    if expression.kind() != "string" {
-        return None;
-    }
-
-    let text = file.text(expression);
-    let trimmed = text
-        .trim_start_matches(['r', 'b', 'f', 'R', 'B', 'F'])
-        .trim_matches(|c| c == '"' || c == '\'');
-    trimmed
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
+    auth_from_name(&hint)
 }
 
 #[cfg(test)]

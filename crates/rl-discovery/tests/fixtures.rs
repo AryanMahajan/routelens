@@ -265,3 +265,57 @@ fn express_fixture_reports_the_expected_problems() {
         "test files must not contribute routes"
     );
 }
+
+#[test]
+fn flask_fixture_matches_snapshot() {
+    check("flask");
+}
+
+#[test]
+fn flask_fixture_reports_the_expected_problems() {
+    let root = fixtures_dir().join("flask");
+    let result = scan(&root).unwrap();
+    let warnings = result.warnings.join("\n");
+
+    assert!(
+        warnings.contains("orphan.py:bp") && warnings.contains("never mounted"),
+        "the unregistered blueprint should be reported, got:\n{warnings}"
+    );
+    assert!(
+        result
+            .endpoints
+            .iter()
+            .any(|e| e.path.unresolved_exprs() == vec!["settings.ADMIN_PREFIX"]),
+        "the config-derived prefix should be an unresolved gap, not a guess"
+    );
+    // Static analysis can see that a route is registered in a loop, but not what it serves:
+    // the registration is kept as an unresolved orphan and the reason is stated.
+    assert!(
+        !result
+            .endpoints
+            .iter()
+            .any(|e| e.path.to_string().contains("widgets")),
+        "loop-registered routes are a documented miss"
+    );
+    assert!(
+        warnings.contains("dynamic.py:app`, which is not declared there"),
+        "routes on a parameter should be reported, got:
+{warnings}"
+    );
+    let class_routes: Vec<_> = result
+        .endpoints
+        .iter()
+        .filter(|e| e.path.to_string().starts_with("/notes"))
+        .map(|e| e.display())
+        .collect();
+    assert_eq!(
+        class_routes,
+        vec![
+            "GET /notes",
+            "DELETE /notes/{note_id}",
+            "GET /notes/{note_id}",
+            "PUT /notes/{note_id}"
+        ],
+        "the MethodView in views.py is linked to its rules in __init__.py, and `methods=` narrows /notes"
+    );
+}

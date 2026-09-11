@@ -116,6 +116,7 @@ fn ports_from_run_commands(text: &str) -> Vec<u16> {
             "gunicorn",
             "hypercorn",
             "flask run",
+            "flask --app",
             "daphne",
             "next dev",
             "next start",
