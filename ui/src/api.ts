@@ -76,6 +76,10 @@ export const api = {
   },
   saveRequest: (collection: string, request: RequestDraft) =>
     call<void>("save_request", { collection, request }),
+  saveCollection: (collection: Collection) => call<void>("save_collection", { collection }),
+  deleteCollection: (name: string) => call<void>("delete_collection", { name }),
+  renameCollection: (from: string, to: string) =>
+    call<void>("rename_collection", { from, to }),
 
   // --- discovery (reads source; never executes it) ---
   scanProject: async () => normalizeScan(await call<ScanResult>("scan_project")),

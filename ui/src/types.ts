@@ -52,6 +52,8 @@ export interface RequestSettings {
 export interface RequestDraft {
   id: string;
   name?: string | null;
+  /** Folder path inside its collection, `Users/Admin`. Null at the top level. */
+  folder?: string | null;
   spec_ref?: string | null;
   method: HttpMethod;
   url: string;
@@ -75,6 +77,7 @@ export interface RequestDraft {
 export interface WireRequestDraft {
   id: string;
   name?: string | null;
+  folder?: string | null;
   spec_ref?: string | null;
   method: HttpMethod;
   url: string;
@@ -114,6 +117,7 @@ export function normalizeRequest(wire: WireRequestDraft): RequestDraft {
   return {
     id: wire.id,
     name: wire.name ?? null,
+    folder: wire.folder ?? null,
     spec_ref: wire.spec_ref ?? null,
     method: wire.method,
     url: wire.url,

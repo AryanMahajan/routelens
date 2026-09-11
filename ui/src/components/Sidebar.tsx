@@ -9,6 +9,7 @@ import type {
   ScanResult,
   WorkspaceInfo,
 } from "../types";
+import { Collections } from "./Collections";
 import { Explorer } from "./Explorer";
 import { MethodBadge } from "./MethodBadge";
 
@@ -18,6 +19,7 @@ export function Sidebar({
   workspace,
   onOpenRequest,
   onOpenWorkspace,
+  onChanged,
   onImport,
   onWorkspaceChange,
   onManageEnvironments,
@@ -29,8 +31,10 @@ export function Sidebar({
   onOpenEndpoint,
 }: {
   workspace: WorkspaceInfo | null;
-  onOpenRequest: (request: RequestDraft) => void;
+  onOpenRequest: (request: RequestDraft, collection: string) => void;
   onOpenWorkspace: () => void;
+  /** Something wrote to the workspace; reload what the sidebar shows. */
+  onChanged: () => void;
   onImport: () => void;
   onWorkspaceChange: (info: WorkspaceInfo) => void;
   onManageEnvironments: () => void;
@@ -180,37 +184,16 @@ export function Sidebar({
           ))}
 
         {panel !== "api" && <div className="min-h-0 flex-1 overflow-auto p-2">
-        {panel === "collections" && (
-          <>
-            {collections.length === 0 && (
-              <p className="px-2 py-4 text-muted">
-                {workspace
-                  ? "No saved requests yet. Import a cURL command or an OpenAPI document to get started."
-                  : "Open a project to see its collections."}
-              </p>
-            )}
-
-            {collections.map((collection) => (
-              <div key={collection.name} className="mb-3">
-                <h2 className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  {collection.name}
-                </h2>
-                {collection.requests.map((request) => (
-                  <button
-                    key={request.id}
-                    onClick={() => onOpenRequest(request)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition hover:bg-raised"
-                  >
-                    <MethodBadge method={request.method} className="w-12 shrink-0 text-right" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {request.name ?? request.url}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </>
-        )}
+        {panel === "collections" &&
+          (workspace ? (
+            <Collections
+              collections={collections}
+              onOpenRequest={onOpenRequest}
+              onChanged={onChanged}
+            />
+          ) : (
+            <p className="px-2 py-4 text-muted">Open a project to see its collections.</p>
+          ))}
 
         {panel === "history" && (
           <>

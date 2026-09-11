@@ -220,6 +220,10 @@ pub struct RequestDraft {
     pub id: RequestId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Where the request sits inside its collection: `Users/Admin`. A path rather than a
+    /// tree, so the collection file stays a flat list and a move is a one-line diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 
     /// The spec this came from, when it came from discovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +257,7 @@ impl RequestDraft {
         RequestDraft {
             id: RequestId::new(),
             name: None,
+            folder: None,
             spec_ref: None,
             method,
             url: url.into(),

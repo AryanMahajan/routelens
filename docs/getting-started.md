@@ -80,11 +80,15 @@ raw, or saved to a file for large payloads.
 
 ## Save it
 
-Any request you have executed can be saved into a collection, which is written as readable
-YAML under `.routelens/` in the project. That file is designed to be committed, so the next
-person who clones the repo starts with your requests already there.
+**Save** (Ctrl+S) writes the request into a collection — the box next to the button names
+which; type a new name to create one. A request opened from a collection saves back to it.
+Collections are YAML files under `.routelens/collections/`, meant to be committed, so the
+next person to clone the project finds the requests already there.
 
-Secret values never go into those files. See [secrets](workspace/secrets.md).
+The **Collections** panel is where they are managed: drag a request to reorder it, drop it
+on a folder or another collection to move it, and use the `…` menu on a request to rename,
+duplicate, delete or file it under a folder (`Users/Admin` nests). The `…` on a collection
+renames or deletes it; **+ Collection** makes an empty one.
 
 ## Paste a cURL command
 

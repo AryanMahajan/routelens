@@ -49,7 +49,9 @@ default_environment: local
 ## Collections
 
 One YAML file per collection, designed to read well in a diff. Requests appear in the order
-they are listed, and nested folders are expressed by nesting rather than by path strings.
+they are listed. A folder is a `folder: Users/Admin` line on the request, not a nested
+structure: the list stays flat, so reordering is a moved block and moving a request into
+another folder is a one-line change.
 
 ```yaml
 version: 1
@@ -72,6 +74,7 @@ requests:
 
 - id: 9c4b7e10-2d83-4f6a-b105-7e39a2c8d514
   name: Create user
+  folder: Admin
   method: POST
   url: '{{base_url}}/api/v1/users'
   headers:
@@ -99,8 +102,10 @@ Design notes:
 - **Defaults are omitted.** A request with no body and default transport settings writes
   neither, so a `GET` stays four lines rather than fifteen.
 - **`id` is a stable identifier**, written once and never rewritten. Requests are referred to
-  by name in the UI, but a name can be edited — the id is what history and open tabs point at
-  so a rename does not break them.
+  by name in the UI, but a name can be edited — the id is what history, open tabs and a
+  save from the editor match on, so a rename updates the request rather than duplicating it.
+- **Folders are paths, and only exist through the requests in them.** An empty folder has
+  nothing to be written as, so it is not.
 - **Transport settings are per request**, and `accept_invalid_certs` is *never* written at
   all. It lasts for the session that set it. Persisting it would hand the next person who
   clones the repository a request with certificate verification silently switched off.

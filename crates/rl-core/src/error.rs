@@ -29,6 +29,9 @@ pub enum CoreError {
         expressions: Vec<String>,
     },
 
+    #[error("a collection named {name:?} already exists")]
+    CollectionExists { name: String },
+
     #[error("no source file at {}", .path.display())]
     NoSuchSource { path: std::path::PathBuf },
 

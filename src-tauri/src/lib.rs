@@ -156,6 +156,25 @@ async fn load_collection(state: State<'_, AppState>, name: String) -> CommandRes
 }
 
 #[tauri::command]
+async fn save_collection(state: State<'_, AppState>, collection: Collection) -> CommandResult<()> {
+    Ok(state.app.lock().await.save_collection(&collection)?)
+}
+
+#[tauri::command]
+async fn delete_collection(state: State<'_, AppState>, name: String) -> CommandResult<()> {
+    Ok(state.app.lock().await.delete_collection(&name)?)
+}
+
+#[tauri::command]
+async fn rename_collection(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+) -> CommandResult<()> {
+    Ok(state.app.lock().await.rename_collection(&from, &to)?)
+}
+
+#[tauri::command]
 async fn save_request(
     state: State<'_, AppState>,
     collection: String,
@@ -348,6 +367,9 @@ pub fn run() {
             delete_environment,
             variable_names,
             load_collection,
+            save_collection,
+            delete_collection,
+            rename_collection,
             save_request,
             scan_project,
             open_endpoint,

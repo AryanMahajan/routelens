@@ -27,9 +27,11 @@ interface Tab {
   sending: boolean;
   /** The request as last opened or saved, for the unsaved-changes dot. */
   saved: string;
+  /** The collection this was opened from or last saved into, so Save goes back there. */
+  collection: string | null;
 }
 
-function newTab(request: RequestDraft): Tab {
+function newTab(request: RequestDraft, collection: string | null = null): Tab {
   return {
     id: crypto.randomUUID(),
     request,
@@ -37,6 +39,7 @@ function newTab(request: RequestDraft): Tab {
     error: null,
     sending: false,
     saved: JSON.stringify(request),
+    collection,
   };
 }
 
@@ -71,7 +74,11 @@ export default function App() {
     setTabs((current) => current.map((t) => (t.id === id ? { ...t, ...changes } : t)));
   }
 
-  function openTab(request: RequestDraft, matchOn?: (tab: Tab) => boolean) {
+  function openTab(
+    request: RequestDraft,
+    matchOn?: (tab: Tab) => boolean,
+    collection: string | null = null,
+  ) {
     // Re-use an untouched tab that already shows the same thing, otherwise open a new one.
     const existing = matchOn ? tabs.find((t) => matchOn(t) && t.saved === JSON.stringify(t.request)) : undefined;
     if (existing) {
@@ -80,7 +87,7 @@ export default function App() {
     }
     // A pristine blank tab is replaced rather than left behind.
     const blank = active && !active.request.url && active.saved === JSON.stringify(active.request);
-    const tab = newTab(request);
+    const tab = newTab(request, collection);
     setTabs((current) => (blank ? current.map((t) => (t.id === active.id ? tab : t)) : [...current, tab]));
     setActiveId(tab.id);
   }
@@ -185,9 +192,10 @@ export default function App() {
       ...tab.request,
       name: tab.request.name ?? `${tab.request.method} ${tab.request.url}`,
     };
+    const target = tab.collection ?? (saveTarget.trim() || "Saved");
     try {
-      await api.saveRequest(saveTarget, named);
-      updateTab(tab.id, { request: named, saved: JSON.stringify(named) });
+      await api.saveRequest(target, named);
+      updateTab(tab.id, { request: named, saved: JSON.stringify(named), collection: target });
       setWorkspace(await api.workspaceInfo());
       refresh();
     } catch (e) {
@@ -247,7 +255,10 @@ export default function App() {
           onScan={runScan}
           onEnrich={() => setEnriching(true)}
           onOpenEndpoint={openEndpoint}
-          onOpenRequest={(saved) => openTab(saved, (t) => t.request.id === saved.id)}
+          onChanged={refresh}
+          onOpenRequest={(saved, collection) =>
+            openTab(saved, (t) => t.request.id === saved.id, collection)
+          }
         />
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -279,11 +290,20 @@ export default function App() {
                 />
 
                 <input
-                  value={saveTarget}
-                  onChange={(e) => setSaveTarget(e.target.value)}
+                  value={active.collection ?? saveTarget}
+                  onChange={(e) => {
+                    setSaveTarget(e.target.value);
+                    if (active.collection !== null) updateTab(active.id, { collection: null });
+                  }}
+                  list="collection-names"
                   title="Collection to save into"
                   className="w-32 shrink-0 rounded border border-edge bg-panel px-2 py-1 outline-none focus:border-accent"
                 />
+                <datalist id="collection-names">
+                  {workspace?.collections.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
                 <button
                   onClick={() => save(active)}
                   disabled={!workspace || !active.request.url}

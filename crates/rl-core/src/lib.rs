@@ -430,18 +430,53 @@ impl RouteLens {
             .load_collection(collection_name)
             .unwrap_or_else(|_| Collection::new(collection_name));
 
-        // Replace by name when one already exists, so saving twice does not duplicate.
-        match request.name.as_deref().and_then(|name| {
-            collection
-                .requests
-                .iter()
-                .position(|r| r.name.as_deref() == Some(name))
-        }) {
-            Some(index) => collection.requests[index] = request,
+        // Replace the same request when it is already there — by id first, so renaming
+        // a saved request updates it rather than duplicating it — then by name, so saving
+        // a fresh draft under an existing name replaces it.
+        let existing = collection
+            .requests
+            .iter()
+            .position(|r| r.id == request.id)
+            .or_else(|| {
+                request.name.as_deref().and_then(|name| {
+                    collection
+                        .requests
+                        .iter()
+                        .position(|r| r.name.as_deref() == Some(name))
+                })
+            });
+        match existing {
+            Some(index) => {
+                // A save from the editor keeps the folder the request was filed under.
+                let folder = collection.requests[index].folder.take();
+                let mut request = request;
+                request.folder = request.folder.or(folder);
+                collection.requests[index] = request;
+            }
             None => collection.push(request),
         }
 
         workspace.save_collection(&collection)?;
+        Ok(())
+    }
+
+    /// Remove a collection file. The requests in it are gone; that is what was asked.
+    pub fn delete_collection(&self, name: &str) -> Result<()> {
+        Ok(self.workspace()?.delete_collection(name)?)
+    }
+
+    /// Rename a collection: the file moves, the requests stay in order.
+    pub fn rename_collection(&self, from: &str, to: &str) -> Result<()> {
+        let workspace = self.workspace()?;
+        let mut collection = workspace.load_collection(from)?;
+        if workspace.load_collection(to).is_ok() {
+            return Err(CoreError::CollectionExists {
+                name: to.to_string(),
+            });
+        }
+        collection.name = to.to_string();
+        workspace.save_collection(&collection)?;
+        workspace.delete_collection(from)?;
         Ok(())
     }
 
@@ -1005,6 +1040,47 @@ mod tests {
         let collection = app.load_collection("Users").unwrap();
         assert_eq!(collection.len(), 1);
         assert_eq!(collection.requests[0].url, "https://x.test/b");
+    }
+
+    #[test]
+    fn renaming_a_saved_request_updates_it_by_id_and_keeps_its_folder() {
+        let (_dir, app) = app();
+
+        let mut draft = RequestDraft::new(HttpMethod::Get, "https://x.test/a");
+        draft.name = Some("Get a".into());
+        draft.folder = Some("Admin".into());
+        app.save_request("Users", draft.clone()).unwrap();
+
+        // The editor renames it and saves again, without knowing about folders.
+        draft.name = Some("Fetch a".into());
+        draft.folder = None;
+        app.save_request("Users", draft).unwrap();
+
+        let collection = app.load_collection("Users").unwrap();
+        assert_eq!(collection.len(), 1, "a rename must not duplicate");
+        assert_eq!(collection.requests[0].name.as_deref(), Some("Fetch a"));
+        assert_eq!(collection.requests[0].folder.as_deref(), Some("Admin"));
+    }
+
+    #[test]
+    fn collections_can_be_renamed_and_deleted() {
+        let (_dir, app) = app();
+        let mut draft = RequestDraft::new(HttpMethod::Get, "https://x.test/a");
+        draft.name = Some("Get a".into());
+        app.save_request("Users", draft.clone()).unwrap();
+        app.save_request("Other", draft).unwrap();
+
+        app.rename_collection("Users", "People").unwrap();
+        assert_eq!(app.collection_names().unwrap(), vec!["Other", "People"]);
+        assert_eq!(app.load_collection("People").unwrap().len(), 1);
+
+        assert!(matches!(
+            app.rename_collection("People", "Other"),
+            Err(CoreError::CollectionExists { .. })
+        ));
+
+        app.delete_collection("Other").unwrap();
+        assert_eq!(app.collection_names().unwrap(), vec!["People"]);
     }
 
     #[tokio::test]
