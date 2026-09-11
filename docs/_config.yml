@@ -1,0 +1,17 @@
+# GitHub Pages (Settings → Pages → source: main, /docs). Gives the documentation an indexable
+# site with a real <title> and description, which the raw repository view does not have.
+title: RouteLens
+description: >-
+  Local-first API client that discovers HTTP endpoints from your source code — FastAPI,
+  Express, Next.js — and lets you test them immediately. Open source, built in Rust.
+url: https://aryanmahajan.github.io
+baseurl: /routelens
+lang: en
+theme: jekyll-theme-minimal
+logo: ""
+show_downloads: false
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+exclude:
+  - internal/

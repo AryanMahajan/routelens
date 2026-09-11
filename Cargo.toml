@@ -8,6 +8,10 @@ edition = "2021"
 rust-version = "1.88"
 authors = ["Aryan Mahajan"]
 repository = "https://github.com/AryanMahajan/routelens"
+homepage = "https://github.com/AryanMahajan/routelens"
+description = "Local-first API client that discovers HTTP endpoints from source code — FastAPI, Express, Next.js — and lets you test them immediately."
+keywords = ["api-client", "openapi", "fastapi", "express", "nextjs"]
+categories = ["development-tools", "web-programming::http-client", "command-line-utilities"]
 
 [workspace.dependencies]
 rl-model = { path = "crates/rl-model" }

@@ -1,125 +1,185 @@
-# RouteLens
+# RouteLens — API client that discovers endpoints from your source code
 
-**Discover and interact with APIs directly from your codebase.**
+**Open a FastAPI, Express or Next.js project and see every API route it serves — then test
+it. A local-first, open-source API client built in Rust, with codebase-aware route discovery
+instead of hand-configured collections.**
 
-> **Status: pre-alpha.** Design is settled and documented; implementation is in progress.
-> Nothing below is installable yet. See [the roadmap](docs/README.md#project-status) for what
-> actually works today.
+[![CI](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml/badge.svg)](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml)
+![Rust](https://img.shields.io/badge/core-Rust-dea584?logo=rust&logoColor=white)
+![Tauri v2](https://img.shields.io/badge/desktop-Tauri%20v2-24C8D8?logo=tauri&logoColor=white)
+![Windows · macOS · Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
+![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
+
+> **Pre-alpha.** Runs from source today; no release builds yet.
+> [Run it](#run-it-from-source) · [What works](#what-works-today) · [Docs](docs/)
 
 ---
 
-Point RouteLens at a project. It reads the source, works out what HTTP API the project
-exposes, and lets you call those endpoints immediately.
+Point RouteLens at a repository. It reads the source — it does not run it — works out which
+HTTP endpoints the project exposes, and gives you a request editor for each one, linked back
+to the file and line that defines it.
 
 ```
-routelens .
+fastapi-app  ·  FastAPI  ·  http://localhost:9000
+
+USERS
+  GET     /api/v1/users/                 app/api/users.py:17
+  POST    /api/v1/users/                 app/api/users.py:35    🔒 body
+  GET     /api/v1/users/{user_id}        app/api/users.py:26
+  DELETE  /api/v1/users/{user_id}        app/api/users.py:42    🔒
+ITEMS
+  GET     /v1/items                      app/api/items.py:11
+  GET     /v2/items                      app/api/items.py:11    ← same router, mounted twice
+ADMIN
+  GET     /?/stats                       app/api/admin.py:11    ⚠ prefix comes from settings
+UNGROUPED
+  GET     /orphan/forgotten              app/api/orphan.py:8    ⚠ router is never mounted
+
+14 endpoints · 2 with gaps · scanned in 86 ms
 ```
 
-```
-myproject  ·  FastAPI  ·  http://localhost:8000
+Every endpoint carries its method, path, query parameters, headers, request body, auth
+requirement and source location. Click one, fill in the blanks, send, read the response.
+No endpoint setup by hand — and where static analysis genuinely cannot know something, it
+**shows the gap instead of guessing**.
 
-API
-├── Auth
-│   ├── POST    /api/v1/login
-│   └── POST    /api/v1/refresh
-│
-├── Users
-│   ├── GET     /api/v1/users
-│   ├── GET     /api/v1/users/{user_id}
-│   ├── POST    /api/v1/users
-│   └── DELETE  /api/v1/users/{user_id}
-│
-└── Documents
-    ├── GET     /api/v1/documents
-    └── POST    /api/v1/documents
+## Why another API client?
 
-12 endpoints · 1 unresolved · scanned in 240ms
-```
+Postman, Insomnia, Bruno and Hoppscotch are good at storing requests you have already
+described to them. None of them read your source tree and tell you what the project actually
+serves. That gap — between *"I just cloned this repo"* and *"I can call its API"* — is what
+RouteLens closes.
 
-Every endpoint carries its method, path and query parameters, request schema, auth
-requirement, and the file and line it was defined on. Select one, fill in the values, send it,
-read the response. No manual endpoint setup.
+It is deliberately not a Postman clone. It is the shortest path from *"what APIs does this
+project have?"* to *"I can see it, understand it, and test it."*
 
-## Why
+|                                    | RouteLens | Postman | Insomnia | Bruno | Hoppscotch |
+|------------------------------------|:---------:|:-------:|:--------:|:-----:|:----------:|
+| Discovers routes from source code  | **✅**    | ✗       | ✗        | ✗     | ✗          |
+| Click-through to the defining line | **✅**    | ✗       | ✗        | ✗     | ✗          |
+| Works offline, no account          | ✅        | partial | partial  | ✅    | ✅         |
+| Git-friendly plain-text workspace  | ✅        | ✗       | ✗        | ✅    | ✗          |
+| Secrets kept out of committed files| ✅        | vault   | vault    | ✅    | ✗          |
+| cURL / OpenAPI / raw HTTP import   | ✅        | ✅      | ✅       | ✅    | ✅         |
+| Environments and `{{variables}}`   | ✅        | ✅      | ✅       | ✅    | ✅         |
+| Open source                        | ✅        | ✗       | ✅       | ✅    | ✅         |
 
-Existing API clients are excellent at *storing* requests you have already described to them.
-None of them read your source tree and tell you what the project actually serves. That gap —
-between "I just cloned this repo" and "I can call its API" — is what RouteLens closes.
+## What works today
 
-The goal is not to build another Postman. The goal is the shortest path from
-*"what APIs does this project have?"* to *"I can see it, understand it, and test it."*
+- **Route discovery** for **FastAPI**, **Express** (CommonJS and ESM, nested routers,
+  `.route()` chains) and **Next.js** (App Router route handlers and `pages/api`), across
+  files, following imports, re-exports and `include_router` / `app.use` prefixes.
+- **Honest gaps**: a prefix read from an environment variable shows as `/?/…`, a router
+  nobody mounts is flagged as an orphan, a router built by a factory is reported rather than
+  dropped.
+- **Request editor** with tabs, path/query/header/body/auth editing, `{{variable}}`
+  autocomplete, and **paste-a-cURL-into-the-URL-bar** (bash *and* Windows `cmd` quoting).
+- **HTTP engine** built for predictability: redirects off by default and shown as a chain
+  when on, credentials stripped on cross-origin hops, raw bytes preserved, per-request
+  timeouts.
+- **Environments, variables and secrets** in three tiers — committed workspace files,
+  a private local secret store, disposable caches — with history recorded redacted.
+- **Import** from cURL, raw HTTP and OpenAPI 3.x / Swagger 2.0.
 
-## What it does
-
-**Project mode** — open a repository and get an explorer of its real endpoints, each linked
-back to its definition in source.
-
-**Workspace mode** — a general-purpose API client: collections, saved requests, environments,
-variables, history. Works with no project at all.
-
-**Import mode** — paste a cURL command, an OpenAPI document, or a raw HTTP request and get a
-structured, editable, executable request. You never have to decide by hand whether something
-belongs in headers, query, auth, or body.
-
-All four sources — source code, cURL, OpenAPI, manual — resolve into one internal model, so
-the rest of the app treats them identically.
+Verified by 400+ tests, including fixture projects per framework whose snapshots record
+**expected misses** as well as hits, and a run against the `expressjs/express` repository
+itself.
 
 ## Framework support
 
-Discovery is static by default: RouteLens reads your code, it does not run it. An optional
-[runtime enrich](docs/discovery/runtime-enrich.md) step can import your app for a
-higher-fidelity result when you ask for it.
-
 | Framework | Language | Status | Notes |
 |---|---|---|---|
-| FastAPI  | Python | Implemented | Routers, prefixes, signatures; runtime enrich planned |
-| Next.js  | TS/JS  | Implemented | App Router + legacy `pages/api` |
-| Express  | JS/TS  | Implemented | Router mounting across CommonJS and ESM modules |
-| Flask    | Python | Planned — P5 | Blueprints; runtime enrich available |
-| Django   | Python | Planned — P6 | `urlpatterns`, `include()`, DRF routers |
+| [FastAPI](docs/discovery/frameworks.md#fastapi)  | Python | ✅ Implemented | Routers, prefixes, dependencies as auth, signatures |
+| [Express](docs/discovery/frameworks.md#express)  | JS/TS  | ✅ Implemented | Module graph across `require`/`import`, mounting, chains |
+| [Next.js](docs/discovery/frameworks.md#nextjs)   | TS/JS  | ✅ Implemented | App Router + legacy `pages/api`, dynamic and catch-all segments |
+| Flask    | Python | Planned | Blueprints; reuses the FastAPI resolver |
+| Django / DRF | Python | Planned | `urlpatterns`, `include()`, DRF routers |
 
-Adding a framework is meant to be a small, self-contained job — see
+Discovery is static by default — RouteLens reads your code and never executes it. An
+opt-in [runtime enrich](docs/discovery/runtime-enrich.md) step (planned) will import your
+app for a higher-fidelity result when you ask for it, and will always show you the exact
+command first.
+
+Adding a framework is a self-contained job against a documented contract — see
 [adding a framework](docs/discovery/adding-a-framework.md).
+
+## Run it from source
+
+Requires a stable Rust toolchain, Node 20+, and Tauri's platform prerequisites
+(WebView2 on Windows — already present on Windows 10/11; `webkit2gtk` on Linux; Xcode
+command-line tools on macOS).
+
+```bash
+git clone https://github.com/AryanMahajan/routelens.git
+cd routelens
+npm install && npm install --prefix ui
+npm run tauri dev
+```
+
+The first build compiles the Rust core and takes a few minutes; after that it is seconds.
+Open **`tests/fixtures/express`** or **`tests/fixtures/fastapi`** for a project with every
+kind of route, gap and orphan in it.
+
+## How discovery works, in three sentences
+
+Framework adapters recognise only three things in a syntax tree — *this creates a router*,
+*this registers a route*, *this mounts a router at a prefix* — plus imports and exports.
+A single registration graph, shared by every framework, links those facts across files and
+composes the full paths. Anything it cannot resolve statically becomes a visible
+`Unresolved` segment rather than a guess.
+
+Longer version: [how it works](docs/discovery/how-it-works.md).
+
+## Honest limitations
+
+- Paths built from runtime values (`settings.API_PREFIX`, `process.env.PREFIX`) are shown
+  as unresolved, not guessed.
+- Routes registered dynamically — in a loop, from config, by a factory — may be missed.
+  Fixtures record which ones, on purpose.
+- Request and response schemas are best-effort from type hints and what handlers read.
+- Auth detection from middleware and dependency *names* is a heuristic and says so.
 
 ## Design principles
 
 1. **Fast** — noticeably lighter than a full API platform. Measured, not assumed.
-2. **Local-first** — no account, no mandatory cloud, everything works offline.
-3. **Zero configuration where possible** — if the project already states something, discover
-   it rather than asking.
+2. **Local-first** — no account, no cloud, everything works offline.
+3. **Zero configuration where possible** — if the project already states something, read it.
 4. **Codebase-aware** — always know where an endpoint actually comes from.
 5. **Git-friendly** — workspace definitions are readable files you can review in a diff.
-6. **Extensible** — frameworks are independent adapters, never special cases scattered
-   through the UI.
+6. **Extensible** — frameworks are independent adapters, never special cases in the UI.
 7. **No feature bloat** — solve discovery and testing exceptionally well first.
-
-## Honest limitations
-
-Static analysis reads code without executing it, which has real limits:
-
-- Paths built from values RouteLens cannot resolve (`PREFIX = settings.API_PREFIX`) are shown
-  as **unresolved** rather than guessed at. A visible gap beats a silently wrong route.
-- Routes registered dynamically — in a loop, from config, by a factory — may be missed.
-- Request and response schemas are best-effort from type hints and annotations.
-
-Runtime enrich closes most of this by asking your app directly, at the cost of executing your
-project's code. It is always opt-in and always tells you exactly what it will run.
 
 ## Documentation
 
 Start at **[docs/](docs/)**.
 
-- [Getting started](docs/getting-started.md) — install, first project, first request
-- [Concepts](docs/concepts.md) — the unified model
-- [How discovery works](docs/discovery/how-it-works.md) — the interesting part
-- [Architecture](docs/architecture.md) — crate map and data flow
-- [Security](docs/security.md) — what RouteLens reads, runs, and stores
+- [Getting started](docs/getting-started.md) · [Concepts](docs/concepts.md) ·
+  [Import](docs/import.md)
+- [How discovery works](docs/discovery/how-it-works.md) ·
+  [Framework support](docs/discovery/frameworks.md) ·
+  [Adding a framework](docs/discovery/adding-a-framework.md)
+- [Architecture](docs/architecture.md) · [Security](docs/security.md) ·
+  [Workspace format](docs/workspace/format.md)
 
 ## Tech
 
-Rust core · Tauri v2 desktop shell · React + TypeScript UI · tree-sitter parsing ·
-SQLite for history and index caches.
+Rust core in a Cargo workspace · Tauri v2 desktop shell · React 18 + TypeScript + Tailwind
+UI · tree-sitter parsing for Python, JavaScript and TypeScript · reqwest · SQLite history.
+
+## FAQ
+
+**Does RouteLens run my project's code?** No. Discovery is static analysis of the source.
+Runtime enrich, when it lands, is opt-in and shows you the exact command before running it.
+
+**Is it a Postman alternative?** For testing the API of a codebase you have in front of you,
+yes. It is not trying to replace team collaboration features, mock servers or monitoring.
+
+**Which frameworks are supported?** FastAPI, Express and Next.js today; Flask and Django
+next. See [framework support](docs/discovery/frameworks.md).
+
+**Where are my secrets stored?** Outside the committed workspace, in a private local store.
+Environment files reference them by name only. See [security](docs/security.md).
 
 ## License
 
-Not yet chosen.
+Not yet chosen — an OSI-approved licence is coming before the first release.

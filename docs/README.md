@@ -1,9 +1,13 @@
-# RouteLens Documentation
+# RouteLens documentation
 
-> **These documents describe a design that is being built, not a shipped product.**
-> Where a document describes something not yet implemented, it says so. Anything in `docs/`
-> is a promise the code is expected to keep — if code and docs disagree, that is a bug in one
-> of them.
+RouteLens is a local-first API client that discovers HTTP endpoints from a project's source
+code — FastAPI, Express and Next.js today — and lets you test them immediately. These pages
+cover how to run it, how discovery works, what each framework adapter handles and misses,
+and how the workspace is stored.
+
+> **Pre-alpha.** Where a document describes something not yet implemented, it says so.
+> Anything in `docs/` is a promise the code is expected to keep — if code and docs disagree,
+> that is a bug in one of them.
 
 ## Project status
 
@@ -11,13 +15,13 @@ Implementation is phased so each phase leaves a usable application.
 
 | Phase | Contents | Status |
 |---|---|---|
-| P0 | Crate skeleton, unified model, storage tiers, variable resolver, docs | In progress |
-| P1 | HTTP engine, request editor, response viewer, history | Not started |
-| P2 | cURL / raw HTTP / OpenAPI importers | Not started |
-| P3 | Discovery core + FastAPI adapter + explorer | Not started |
-| P4 | Next.js adapter, then Express adapter | Not started |
-| P5 | Runtime enrich, Flask adapter | Not started |
-| P6 | Collections & environments UI, Django + DRF | Not started |
+| P0 | Crate skeleton, unified model, storage tiers, variable resolver, docs | Done |
+| P1 | HTTP engine, request editor, response viewer, history | Done |
+| P2 | cURL / raw HTTP / OpenAPI importers | Done |
+| P3 | Discovery core + FastAPI adapter + explorer | Done |
+| P4 | Next.js adapter, then Express adapter | Done |
+| P5 | Runtime enrich, Flask adapter | Next |
+| P6 | Collections & environments UI, Django + DRF | Environments UI landed early; the rest not started |
 
 Live phase tracking, including what slipped and why, lives in `docs/internal/roadmap.md`
 (not committed).
