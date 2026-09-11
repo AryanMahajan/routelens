@@ -6,16 +6,19 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  Collection,
-  ScanResult,
-  Environment,
-  Exchange,
-  HistoryEntry,
-  ImportResult,
-  OpenApiSummary,
-  RequestDraft,
-  WorkspaceInfo,
+import {
+  normalizeRequest,
+  type Collection,
+  type ScanResult,
+  type Environment,
+  type Exchange,
+  type HistoryEntry,
+  type ImportResult,
+  type OpenApiSummary,
+  type RequestDraft,
+  type WireCollection,
+  type WireRequestDraft,
+  type WorkspaceInfo,
 } from "./types";
 
 /** An error raised by the core, already carrying its flattened source chain. */
@@ -55,14 +58,19 @@ export const api = {
   deleteSecret: (name: string) => call<void>("delete_secret", { name }),
 
   // --- collections ---
-  loadCollection: (name: string) => call<Collection>("load_collection", { name }),
+  loadCollection: async (name: string): Promise<Collection> => {
+    const wire = await call<WireCollection>("load_collection", { name });
+    return { ...wire, requests: (wire.requests ?? []).map(normalizeRequest) };
+  },
   saveRequest: (collection: string, request: RequestDraft) =>
     call<void>("save_request", { collection, request }),
 
   // --- discovery (reads source; never executes it) ---
   scanProject: () => call<ScanResult>("scan_project"),
-  openEndpoint: (id: string, baseUrl?: string) =>
-    call<RequestDraft>("open_endpoint", { id, baseUrl: baseUrl ?? null }),
+  openEndpoint: async (id: string, baseUrl?: string) =>
+    normalizeRequest(
+      await call<WireRequestDraft>("open_endpoint", { id, baseUrl: baseUrl ?? null }),
+    ),
   revealInEditor: (file: string, line: number) =>
     call<void>("reveal_in_editor", { file, line }),
 
@@ -74,9 +82,14 @@ export const api = {
   clearHistory: () => call<void>("clear_history"),
 
   // --- import ---
-  importCurl: (text: string) => call<ImportResult<RequestDraft>>("import_curl", { text }),
-  importRawHttp: (text: string) =>
-    call<ImportResult<RequestDraft>>("import_raw_http", { text }),
+  importCurl: async (text: string): Promise<ImportResult<RequestDraft>> => {
+    const result = await call<ImportResult<WireRequestDraft>>("import_curl", { text });
+    return { ...result, value: normalizeRequest(result.value) };
+  },
+  importRawHttp: async (text: string): Promise<ImportResult<RequestDraft>> => {
+    const result = await call<ImportResult<WireRequestDraft>>("import_raw_http", { text });
+    return { ...result, value: normalizeRequest(result.value) };
+  },
   importOpenApi: (text: string, collection: string) =>
     call<ImportResult<OpenApiSummary>>("import_openapi", { text, collection }),
 };

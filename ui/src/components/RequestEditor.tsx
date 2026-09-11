@@ -26,7 +26,10 @@ export function RequestEditor({
 
   // Path parameters are discovered from the URL itself, so the editor always offers a field
   // for every `{placeholder}` present — including ones typed by hand just now.
-  const pathParams = Array.from(request.url.matchAll(/\{([^}]+)\}/g)).map((m) => m[1]!);
+  // `{{base_url}}` is a variable, not a parameter, so double braces are excluded.
+  const pathParams = Array.from(request.url.matchAll(/(?<!\{)\{([^{}]+)\}(?!\})/g)).map(
+    (m) => m[1]!,
+  );
 
   const counts: Record<Tab, number> = {
     params: request.query.filter((q) => q.enabled).length,

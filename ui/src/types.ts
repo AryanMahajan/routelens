@@ -64,6 +64,74 @@ export interface RequestDraft {
   settings: RequestSettings;
 }
 
+/**
+ * A request as it actually crosses the wire.
+ *
+ * The core serializes with `skip_serializing_if` so that saved YAML stays tidy — which
+ * means every empty collection and every default is simply *absent*. This type says so,
+ * and `normalizeRequest` in `api.ts` turns it into a full `RequestDraft` before any
+ * component sees it. Components never receive a wire request directly.
+ */
+export interface WireRequestDraft {
+  id: string;
+  name?: string | null;
+  spec_ref?: string | null;
+  method: HttpMethod;
+  url: string;
+  path_values?: Record<string, string>;
+  query?: WireKeyValue[];
+  headers?: WireKeyValue[];
+  cookies?: WireKeyValue[];
+  auth?: AuthConfig;
+  body?: BodyValue;
+  settings?: Partial<RequestSettings>;
+}
+
+export interface WireKeyValue {
+  key: string;
+  value?: string;
+  enabled?: boolean;
+  description?: string | null;
+}
+
+export interface WireCollection {
+  version: number;
+  name: string;
+  description?: string | null;
+  requests?: WireRequestDraft[];
+}
+
+/** Fill in everything the core left out. Mirrors the serde defaults on the Rust side. */
+export function normalizeRequest(wire: WireRequestDraft): RequestDraft {
+  const kv = (rows: WireKeyValue[] | undefined): KeyValue[] =>
+    (rows ?? []).map((row) => ({
+      key: row.key,
+      value: row.value ?? "",
+      enabled: row.enabled ?? true,
+      description: row.description ?? null,
+    }));
+
+  return {
+    id: wire.id,
+    name: wire.name ?? null,
+    spec_ref: wire.spec_ref ?? null,
+    method: wire.method,
+    url: wire.url,
+    path_values: wire.path_values ?? {},
+    query: kv(wire.query),
+    headers: kv(wire.headers),
+    cookies: kv(wire.cookies),
+    auth: wire.auth ?? { type: "none" },
+    body: wire.body ?? { type: "none" },
+    settings: {
+      follow_redirects: wire.settings?.follow_redirects ?? false,
+      max_redirects: wire.settings?.max_redirects ?? 10,
+      accept_invalid_certs: false,
+      timeout_ms: wire.settings?.timeout_ms ?? 30000,
+    },
+  };
+}
+
 export interface Timing {
   ttfb_ms: number;
   total_ms: number;

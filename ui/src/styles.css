@@ -1,21 +1,58 @@
 @import "tailwindcss";
 
-/* A developer tool that sits beside an editor all day. Dark, low-contrast chrome so the
-   response body is the brightest thing on screen. */
-@theme {
-  --color-ground: #0b1020;
-  --color-panel: #111827;
-  --color-raised: #1a2234;
-  --color-edge: #26304a;
-  --color-ink: #e8ecf6;
-  --color-muted: #8b96b0;
-  --color-accent: #38bdf8;
+/* Two palettes, switched by `data-theme` on <html>. Neutral greys rather than a tinted
+   navy: a tool that sits beside an editor all day should not compete with it, and the
+   response body should be the brightest thing on screen. */
+:root {
+  color-scheme: dark;
+  --t-ground: #151518;
+  --t-panel: #1b1b1f;
+  --t-raised: #26262c;
+  --t-edge: #33333b;
+  --t-ink: #ececef;
+  --t-muted: #9a9aa7;
+  --t-accent: #7c9cff;
 
-  --color-method-get: #4ade80;
-  --color-method-post: #fbbf24;
-  --color-method-put: #60a5fa;
-  --color-method-patch: #c084fc;
-  --color-method-delete: #f87171;
+  --t-get: #3fd68a;
+  --t-post: #f5b544;
+  --t-put: #62a8ff;
+  --t-patch: #c48cff;
+  --t-delete: #ff6b6b;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --t-ground: #f4f4f6;
+  --t-panel: #ffffff;
+  --t-raised: #ebebef;
+  --t-edge: #d9d9e0;
+  --t-ink: #1c1c21;
+  --t-muted: #6a6a78;
+  --t-accent: #4560e6;
+
+  --t-get: #15803d;
+  --t-post: #b45309;
+  --t-put: #1d4ed8;
+  --t-patch: #7e22ce;
+  --t-delete: #b91c1c;
+}
+
+/* `inline` so the utilities reference the variables at runtime, which is what lets the
+   theme switch without a rebuild. */
+@theme inline {
+  --color-ground: var(--t-ground);
+  --color-panel: var(--t-panel);
+  --color-raised: var(--t-raised);
+  --color-edge: var(--t-edge);
+  --color-ink: var(--t-ink);
+  --color-muted: var(--t-muted);
+  --color-accent: var(--t-accent);
+
+  --color-method-get: var(--t-get);
+  --color-method-post: var(--t-post);
+  --color-method-put: var(--t-put);
+  --color-method-patch: var(--t-patch);
+  --color-method-delete: var(--t-delete);
 
   --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo,
     Consolas, monospace;
@@ -34,7 +71,7 @@ body {
   overflow: hidden;
 }
 
-/* Chrome's default scrollbars are far too loud against a dark panel. */
+/* Default scrollbars are far too loud against a flat panel. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { applyTheme, currentTheme, type Theme } from "../theme";
 import type {
   Collection,
   EndpointSpec,
@@ -40,6 +41,13 @@ export function Sidebar({
   const [panel, setPanel] = useState<Panel>("api");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [theme, setTheme] = useState<Theme>(currentTheme);
+
+  function toggleTheme() {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    setTheme(next);
+  }
 
   useEffect(() => {
     if (!workspace) {
@@ -221,13 +229,20 @@ export function Sidebar({
         </div>}
       </div>
 
-      <div className="shrink-0 border-t border-edge p-2">
+      <div className="flex shrink-0 gap-2 border-t border-edge p-2">
         <button
           onClick={onImport}
           disabled={!workspace}
-          className="w-full rounded bg-raised px-3 py-1.5 transition hover:brightness-125 disabled:opacity-40"
+          className="flex-1 rounded bg-raised px-3 py-1.5 transition hover:brightness-125 disabled:opacity-40"
         >
           Import…
+        </button>
+        <button
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          className="shrink-0 rounded bg-raised px-3 py-1.5 text-muted transition hover:brightness-125 hover:text-ink"
+        >
+          {theme === "dark" ? "☀" : "☾"}
         </button>
       </div>
     </aside>
