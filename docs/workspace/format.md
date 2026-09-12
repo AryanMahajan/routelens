@@ -31,6 +31,12 @@ The user data directory is `%LOCALAPPDATA%\routelens` on Windows,
 RouteLens writes `.routelens/.gitignore` automatically on workspace creation, so the private
 tier is excluded from the moment it exists rather than after someone notices.
 
+It also adds a `.routelens` line to the **project's own** `.gitignore` every time a workspace
+is created or opened — appended to an existing file without touching any other line, or
+written as a new file if the project has none. A rule that already covers the directory in
+any spelling (`.routelens`, `.routelens/`, `/.routelens/`) is left as it is. Remove the line
+if you decide to commit environments after all; it is only added back if no rule is present.
+
 ## Why three tiers
 
 Two tiers is the obvious design and it is wrong. "Committed" and "not committed" leaves no

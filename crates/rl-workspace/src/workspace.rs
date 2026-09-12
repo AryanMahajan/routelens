@@ -128,6 +128,7 @@ impl Workspace {
         }
 
         write_file(&layout.gitignore(), layout::GITIGNORE_CONTENTS)?;
+        ensure_project_gitignore(&layout)?;
 
         let workspace = Workspace {
             manifest: WorkspaceManifest::new(name, kind),
@@ -163,6 +164,7 @@ impl Workspace {
         if !gitignore.is_file() {
             write_file(&gitignore, layout::GITIGNORE_CONTENTS)?;
         }
+        ensure_project_gitignore(&layout)?;
 
         migrate_collections(&layout)?;
 
@@ -328,6 +330,47 @@ fn write_yaml<T: Serialize>(path: &Path, value: &T, what: &str) -> Result<()> {
         source,
     })?;
     write_file(path, &text)
+}
+
+/// Make sure the project's own `.gitignore` excludes `.routelens/`.
+///
+/// Nothing else in the file is touched: an existing `.gitignore` gets one line appended
+/// (after a newline if the file does not already end with one), and a missing one is
+/// created with just that line. Runs on every open so a rule someone removed, or a
+/// project whose `.gitignore` arrived later, is covered again.
+fn ensure_project_gitignore(layout: &Layout) -> Result<()> {
+    let path = layout.project_gitignore();
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(WorkspaceError::io(format!("reading {}", path.display()), e)),
+    };
+
+    if ignores_routelens(&existing) {
+        return Ok(());
+    }
+
+    let mut text = existing;
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(layout::PROJECT_IGNORE_RULE);
+    text.push('\n');
+    write_file(&path, &text)
+}
+
+/// Whether a `.gitignore` already has a rule for the `.routelens` directory — in any of the
+/// spellings git accepts for it, so a hand-written `/.routelens/` is not duplicated.
+fn ignores_routelens(gitignore: &str) -> bool {
+    gitignore.lines().any(|line| {
+        let rule = line.trim();
+        if rule.starts_with('#') {
+            return false;
+        }
+        let rule = rule.strip_prefix('/').unwrap_or(rule);
+        let rule = rule.strip_suffix('/').unwrap_or(rule);
+        rule == layout::PROJECT_IGNORE_RULE
+    })
 }
 
 fn write_file(path: &Path, contents: &str) -> Result<()> {
@@ -496,6 +539,54 @@ mod tests {
             reopened.layout().gitignore().is_file(),
             "a workspace must never start writing secrets into a tracked tree"
         );
+    }
+
+    #[test]
+    fn creation_adds_routelens_to_a_missing_project_gitignore() {
+        let (_dir, ws) = workspace();
+        let text = std::fs::read_to_string(ws.layout().project_gitignore()).unwrap();
+        assert_eq!(text, ".routelens\n");
+    }
+
+    #[test]
+    fn an_existing_project_gitignore_is_appended_to_not_rewritten() {
+        let dir = TempDir::new().unwrap();
+        let gitignore = dir.path().join(".gitignore");
+        std::fs::write(&gitignore, "node_modules/\n*.log").unwrap();
+
+        Workspace::create_in(isolated(dir.path()), "demo", WorkspaceKind::Project).unwrap();
+
+        let text = std::fs::read_to_string(&gitignore).unwrap();
+        assert_eq!(text, "node_modules/\n*.log\n.routelens\n");
+    }
+
+    #[test]
+    fn a_project_gitignore_that_already_ignores_routelens_is_left_alone() {
+        for spelling in [".routelens", ".routelens/", "/.routelens", "/.routelens/"] {
+            let dir = TempDir::new().unwrap();
+            let gitignore = dir.path().join(".gitignore");
+            let original = format!("dist/\n{spelling}\n");
+            std::fs::write(&gitignore, &original).unwrap();
+
+            Workspace::create_in(isolated(dir.path()), "demo", WorkspaceKind::Project).unwrap();
+
+            assert_eq!(
+                std::fs::read_to_string(&gitignore).unwrap(),
+                original,
+                "{spelling} already covers the directory"
+            );
+        }
+    }
+
+    #[test]
+    fn opening_restores_a_removed_project_ignore_rule() {
+        let (dir, ws) = workspace();
+        std::fs::write(ws.layout().project_gitignore(), "# nothing\n").unwrap();
+
+        Workspace::open_in(isolated(dir.path())).unwrap();
+
+        let text = std::fs::read_to_string(ws.layout().project_gitignore()).unwrap();
+        assert_eq!(text, "# nothing\n.routelens\n");
     }
 
     #[test]

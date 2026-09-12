@@ -29,6 +29,8 @@
 //!
 //! `.routelens/.gitignore` is written at creation, and restored on open if it went missing.
 //! Git friendliness plus bearer tokens is exactly how credentials reach version control.
+//! The project's own `.gitignore` also gains a `.routelens` line on create and open —
+//! appended, never rewritten; created if absent — so the directory stays out of the repo.
 //!
 //! Committed files use sorted keys, so a diff reflects a real edit rather than serializer
 //! churn — these files are meant to be reviewed in a pull request.

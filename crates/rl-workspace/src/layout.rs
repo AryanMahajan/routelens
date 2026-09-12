@@ -20,6 +20,10 @@ pub const HISTORY_DB: &str = "history.sqlite";
 pub const INDEX_DB: &str = "index.sqlite";
 pub const GITIGNORE_FILE: &str = ".gitignore";
 
+/// The rule appended to the *project's* own `.gitignore` so the whole `.routelens/`
+/// directory stays out of the user's repository.
+pub const PROJECT_IGNORE_RULE: &str = ".routelens";
+
 /// Written when a workspace is created, not after someone notices a token in a diff.
 ///
 /// Git-friendly storage plus bearer tokens is exactly how credentials reach version control,
@@ -110,6 +114,11 @@ impl Layout {
 
     pub fn gitignore(&self) -> PathBuf {
         self.dir().join(GITIGNORE_FILE)
+    }
+
+    /// The project's own `.gitignore`, beside `.routelens/` — not the one inside it.
+    pub fn project_gitignore(&self) -> PathBuf {
+        self.root.join(GITIGNORE_FILE)
     }
 
     /// One file per collection, so two people adding requests to different collections do
