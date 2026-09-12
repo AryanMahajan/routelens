@@ -121,8 +121,7 @@ Download the build for your platform from the
 | Platform | File |
 |---|---|
 | Windows 10/11 | `RouteLens_x.y.z_x64-setup.exe` (or the `.msi`) |
-| macOS — Apple Silicon | `RouteLens_x.y.z_aarch64.dmg` |
-| macOS — Intel | `RouteLens_x.y.z_x64.dmg` |
+| macOS (Apple Silicon and Intel) | `RouteLens_x.y.z_universal.dmg` |
 | Linux | `RouteLens_x.y.z_amd64.AppImage`, `.deb` or `.rpm` |
 
 **The builds are not code-signed** — signing certificates cost money, and this is a free

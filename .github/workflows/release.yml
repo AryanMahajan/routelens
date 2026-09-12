@@ -31,12 +31,12 @@ jobs:
           - name: Windows x64
             os: windows-latest
             args: ""
-          - name: macOS Apple Silicon
+          # One universal .dmg for Apple Silicon and Intel, built on the arm64 runner.
+          # GitHub has retired its Intel macOS runners, so a separate x86_64 job would
+          # queue forever.
+          - name: macOS universal
             os: macos-latest
-            args: --target aarch64-apple-darwin
-          - name: macOS Intel
-            os: macos-13
-            args: --target x86_64-apple-darwin
+            args: --target universal-apple-darwin
           - name: Linux x64
             os: ubuntu-22.04
             args: ""

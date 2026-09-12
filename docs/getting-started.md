@@ -6,7 +6,7 @@
 
 Every tagged version has installers on the
 [Releases](https://github.com/AryanMahajan/routelens/releases) page: an `.exe`/`.msi` for
-Windows, a `.dmg` for macOS (Apple Silicon and Intel), and an AppImage/`.deb`/`.rpm` for
+Windows, a universal `.dmg` for macOS (Apple Silicon and Intel), and an AppImage/`.deb`/`.rpm` for
 Linux.
 
 The builds are **unsigned**, so the first launch is met with a warning:
