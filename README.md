@@ -10,8 +10,9 @@ discovery instead of hand-configured collections.**
 ![Windows · macOS · Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
 ![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
 
-> **Pre-alpha.** Runs from source today; no release builds yet.
-> [Run it](#run-it-from-source) · [What works](#what-works-today) · [Docs](docs/)
+> **Pre-alpha.** Unsigned installers for every platform are on the
+> [Releases](https://github.com/AryanMahajan/routelens/releases) page, or run it from source.
+> [Install](#install) · [Run it from source](#run-it-from-source) · [What works](#what-works-today) · [Docs](docs/)
 
 ---
 
@@ -112,6 +113,31 @@ first.
 Adding a framework is a self-contained job against a documented contract — see
 [adding a framework](docs/discovery/adding-a-framework.md).
 
+## Install
+
+Download the build for your platform from the
+[latest release](https://github.com/AryanMahajan/routelens/releases/latest):
+
+| Platform | File |
+|---|---|
+| Windows 10/11 | `RouteLens_x.y.z_x64-setup.exe` (or the `.msi`) |
+| macOS — Apple Silicon | `RouteLens_x.y.z_aarch64.dmg` |
+| macOS — Intel | `RouteLens_x.y.z_x64.dmg` |
+| Linux | `RouteLens_x.y.z_amd64.AppImage`, `.deb` or `.rpm` |
+
+**The builds are not code-signed** — signing certificates cost money, and this is a free
+project with no income. Each OS will warn once before the first launch:
+
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
+- **macOS:** "cannot be opened because the developer cannot be verified". **Right-click the
+  app → Open → Open**, or allow it under **System Settings → Privacy & Security**.
+- **Linux:** `chmod +x RouteLens_*.AppImage`, or install the `.deb` / `.rpm` with your package
+  manager.
+
+If you would rather not run an unsigned binary, build it yourself — the release workflow is
+[`.github/workflows/release.yml`](.github/workflows/release.yml), and `npm run tauri build`
+produces the same installer locally.
+
 ## Run it from source
 
 Requires a stable Rust toolchain, Node 20+, and Tauri's platform prerequisites
@@ -194,4 +220,5 @@ Environment files reference them by name only. See [security](docs/security.md).
 
 ## License
 
-Not yet chosen — an OSI-approved licence is coming before the first release.
+[MIT](LICENSE). Free to use, modify and redistribute — commercially or otherwise. RouteLens
+has no paid tier, no accounts, no telemetry, and no cloud; it never will.

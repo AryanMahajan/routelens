@@ -1,16 +1,33 @@
 # Getting started
 
-> **Pre-alpha.** There are no release builds yet; run it from source. Steps marked
-> *(planned)* do not work yet.
+> **Pre-alpha.** Steps marked *(planned)* do not work yet.
+
+## Install a release
+
+Every tagged version has installers on the
+[Releases](https://github.com/AryanMahajan/routelens/releases) page: an `.exe`/`.msi` for
+Windows, a `.dmg` for macOS (Apple Silicon and Intel), and an AppImage/`.deb`/`.rpm` for
+Linux.
+
+The builds are **unsigned**, so the first launch is met with a warning:
+
+| OS | What you see | What to do |
+|---|---|---|
+| Windows | SmartScreen: "Windows protected your PC" | **More info → Run anyway** |
+| macOS | "cannot be opened because the developer cannot be verified" | **Right-click → Open → Open**, or **System Settings → Privacy & Security → Open Anyway** |
+| Linux | AppImage is not executable | `chmod +x RouteLens_*.AppImage` |
+
+The warning appears once per install. Signing will come when the project can afford
+certificates; until then, the alternative is to build from source below.
 
 ## Run from source
 
 ```bash
 git clone https://github.com/AryanMahajan/routelens.git
 cd routelens
-npm install --prefix ui
+npm install && npm install --prefix ui
 npm run tauri dev                  # development build, hot-reloading UI
-npm run tauri build                # installer / bundle *(untested so far)*
+npm run tauri build                # the same installer the release workflow produces
 ```
 
 The first `dev` compiles the Rust side, which takes a few minutes; afterwards it is seconds.

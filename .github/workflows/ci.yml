@@ -13,9 +13,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job is independent and runs at the same time; the run takes as long as the slowest
+# one (the tests), not the sum. Format is seconds, so a formatting slip is reported first.
 jobs:
-  rust:
-    name: Rust
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,15 +41,30 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Format
-        run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+  # Includes the discovery fixture snapshots (`rl-discovery --test fixtures`): a route that
+  # quietly stops being found produces no error, just a shorter list, and this is the guard.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
 
       # Runtime enrich's end-to-end tests import the Flask and FastAPI fixtures for real,
       # and skip themselves without an interpreter that can. Give them one.
@@ -47,8 +74,7 @@ jobs:
       - name: Install the fixtures' dependencies
         run: pip install -r tests/fixtures/flask/requirements.txt -r tests/fixtures/fastapi/requirements.txt -r tests/fixtures/django/requirements.txt
 
-      - name: Test
-        run: cargo test --workspace
+      - run: cargo test --workspace
         env:
           ROUTELENS_TEST_PYTHON: python
 
@@ -74,15 +100,3 @@ jobs:
 
       - name: Build
         run: npx vite build
-
-  # Discovery accuracy is invisible to the other jobs: a route that quietly stops being found
-  # produces no error, just a shorter list. Once fixtures land in P3 this job is the guard.
-  fixtures:
-    name: Discovery fixtures
-    runs-on: ubuntu-latest
-    if: hashFiles('tests/fixtures/**') != ''
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p rl-discovery --test fixtures
