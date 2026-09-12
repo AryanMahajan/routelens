@@ -27,7 +27,7 @@
     "developer-tools"
   ],
   "repository": "github:AryanMahajan/routelens",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

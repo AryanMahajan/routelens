@@ -3,6 +3,7 @@ name = "rl-http"
 description = "The request execution engine. Deliberately low-magic."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -3,6 +3,7 @@ name = "rl-model"
 description = "RouteLens unified API model and variable resolver. Pure data, no I/O."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

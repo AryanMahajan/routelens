@@ -3,6 +3,7 @@ name = "rl-workspace"
 description = "Workspace files, the three storage tiers, secrets, and history."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

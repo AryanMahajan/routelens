@@ -7,6 +7,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 authors = ["Aryan Mahajan"]
+license = "MIT"
 repository = "https://github.com/AryanMahajan/routelens"
 homepage = "https://github.com/AryanMahajan/routelens"
 description = "Local-first API client that discovers HTTP endpoints from source code — FastAPI, Flask, Django, Express, Next.js — and lets you test them immediately."

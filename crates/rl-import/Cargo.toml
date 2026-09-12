@@ -3,6 +3,7 @@ name = "rl-import"
 description = "Importers for cURL, OpenAPI, and raw HTTP. All produce rl-model types."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

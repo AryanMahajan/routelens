@@ -3,6 +3,7 @@ name = "rl-core"
 description = "Facade over the other crates. The only surface a shell calls."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
