@@ -62,6 +62,9 @@ html,
 body,
 #root {
   height: 100%;
+  /* Nothing here scrolls the page itself: every pane manages its own overflow. A focus()
+     on an element that pokes past the window edge must not shove the whole layout. */
+  overflow: hidden;
 }
 
 body {

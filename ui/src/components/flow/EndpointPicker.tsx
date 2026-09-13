@@ -25,7 +25,9 @@ export function EndpointPicker({
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    input.current?.focus();
+    // `preventScroll`: the menu hangs off the toolbar's right edge, and a plain focus()
+    // would scroll the whole window sideways to reveal it.
+    input.current?.focus({ preventScroll: true });
     function onDown(event: MouseEvent) {
       if (box.current && !box.current.contains(event.target as Node)) onClose();
     }
@@ -55,7 +57,7 @@ export function EndpointPicker({
   return (
     <div
       ref={box}
-      className="absolute left-0 top-full z-20 mt-1 flex max-h-[420px] w-96 flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-xl"
+      className="absolute right-0 top-full z-20 mt-1 flex max-h-[420px] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-edge bg-panel shadow-xl"
     >
       <input
         ref={input}
