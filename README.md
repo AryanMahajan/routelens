@@ -12,7 +12,7 @@ discovery instead of hand-configured collections.**
 
 > **Pre-alpha.** Unsigned installers for every platform are on the
 > [Releases](https://github.com/AryanMahajan/routelens/releases) page, or run it from source.
-> [Install](#install) · [Run it from source](#run-it-from-source) · [What works](#what-works-today) · [Docs](docs/)
+> [Install](#install) · [Run it from source](#run-it-from-source) · [What works](#what-works-today) · [Flows](#flows-multi-step-api-tests-on-a-canvas) · [Docs](docs/)
 
 ---
 
@@ -44,6 +44,10 @@ requirement and source location. Click one, fill in the blanks, send, read the r
 No endpoint setup by hand — and where static analysis genuinely cannot know something, it
 **shows the gap instead of guessing**.
 
+Then take those endpoints onto a canvas and chain them into a test — log in, take the token,
+create a record, fetch it, assert on it, delete it, confirm it is gone — and run the whole
+thing with one key. See [Flows](#flows-multi-step-api-tests-on-a-canvas).
+
 ## Why another API client?
 
 Postman, Insomnia, Bruno and Hoppscotch are good at storing requests you have already
@@ -58,6 +62,7 @@ project have?"* to *"I can see it, understand it, and test it."*
 |------------------------------------|:---------:|:-------:|:--------:|:-----:|:----------:|
 | Discovers routes from source code  | **✅**    | ✗       | ✗        | ✗     | ✗          |
 | Click-through to the defining line | **✅**    | ✗       | ✗        | ✗     | ✗          |
+| Visual multi-step flows, built from discovered routes | **✅** | partial | partial | partial | ✗ |
 | Works offline, no account          | ✅        | partial | partial  | ✅    | ✅         |
 | Git-friendly plain-text environments | ✅      | ✗       | ✗        | ✅    | ✗          |
 | Secrets kept out of committed files| ✅        | vault   | vault    | ✅    | ✗          |
@@ -98,6 +103,47 @@ project have?"* to *"I can see it, understand it, and test it."*
 Verified by 460+ tests, including fixture projects per framework whose snapshots record
 **expected misses** as well as hits, a run against the `expressjs/express` repository
 itself, and an end-to-end runtime-enrich pass over a real Flask application.
+
+## Flows: multi-step API tests on a canvas
+
+A flow is a graph of requests where each response can feed the next. Cards come straight
+from the discovered API — click an endpoint in the API panel or drag it onto the canvas —
+so nothing is retyped, and every card still knows the file and line that serves it.
+
+```
+ ┌─ POST /api/v1/users/ ─┐    ┌─ GET /api/v1/users/{id} ─┐    ┌─ IF {{user_id}} > 3 ─┐
+ │ ↓ user_id = body.id   │──▶ │ id = {{user_id}}          │──▶ │             true ●──┼──▶ DELETE … ──▶ GET …
+ │ ✓ status == 201       │    │ ✓ body.name == Dana       │    │            false ●  │      ✓ 204        ✓ 404
+ └───────────────────────┘    └───────────────────────────┘    └─────────────────────┘
+        201 · 12 ms                    200 · 4 ms                     took true
+```
+
+- **Extract** a value from any response — a body path like `user.id` or `items[0].name`, a
+  header, the status — and it becomes `{{user_id}}` for every later step: in a URL, a path
+  parameter, a header, a body.
+- **Assert** on status, headers, body fields or duration with `==`, `!=`, `contains`,
+  `exists`, `>`, `<`. Every new card starts with `status < 400`; delete it when a 404 is
+  the point.
+- **Conditions** send the run down a `true` or `false` output; the other arm is skipped, not
+  failed, and both arms can rejoin.
+- **Execution follows the edges**, never the layout: a step runs after everything wired into
+  it, and only if those passed. When something fails, the failed card turns red with the
+  reason, the edges it cut turn red, and every step it took down is dashed and says which
+  step's failure stopped it.
+- **Inspect** any card after a run: the request as actually sent, extracted values, each
+  check with expected vs found, and the full response in the same viewer a request tab uses.
+- **Jump to source** from a card with `↗`, exactly like the API panel.
+- Flows are saved as readable YAML in `.routelens/flows/` with the project, so they travel
+  with the repository; every request a run sends lands in history, redacted.
+
+`Ctrl+Enter` runs, `Ctrl+S` saves, `Ctrl+D` duplicates, `Delete` deletes, `Ctrl+B` hides the
+sidebar when you want the whole screen for the canvas.
+
+Read [docs/flows.md](docs/flows.md) for the reference,
+[docs/flows-walkthrough.md](docs/flows-walkthrough.md) for a step-by-step build of a real
+flow against the bundled FastAPI fixture and a trace of what the runner does with it, and
+[docs/examples/fastapi-user-lifecycle.yaml](docs/examples/fastapi-user-lifecycle.yaml) for
+that flow as a file.
 
 ## Framework support
 
@@ -194,7 +240,9 @@ Longer version: [how it works](docs/discovery/how-it-works.md).
 Start at **[docs/](docs/)**.
 
 - [Getting started](docs/getting-started.md) · [Concepts](docs/concepts.md) ·
-  [Import](docs/import.md) · [Flows](docs/flows.md)
+  [Import](docs/import.md)
+- [Flows](docs/flows.md) · [Flows walkthrough](docs/flows-walkthrough.md) ·
+  [Example flow](docs/examples/fastapi-user-lifecycle.yaml)
 - [How discovery works](docs/discovery/how-it-works.md) ·
   [Framework support](docs/discovery/frameworks.md) ·
   [Adding a framework](docs/discovery/adding-a-framework.md)

@@ -33,7 +33,9 @@ Live phase tracking, including what slipped and why, lives in `docs/internal/roa
 1. [Getting started](getting-started.md) — install, open a project, send a request
 2. [Concepts](concepts.md) — the two core types and why there are two
 3. [Import](import.md) — cURL, OpenAPI, raw HTTP
-4. [Flows](flows.md) — multi-step API tests on a canvas
+4. [Flows](flows.md) — multi-step API tests on a canvas; the
+   [walkthrough](flows-walkthrough.md) builds one against the FastAPI fixture and traces the
+   run, and [examples/](examples/) has it as a file
 5. [Workspace format](workspace/format.md) — what lands on disk
 6. [Environments](workspace/environments.md) and [secrets](workspace/secrets.md)
 

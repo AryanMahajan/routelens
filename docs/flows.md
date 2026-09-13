@@ -128,6 +128,10 @@ substituted moments before sending, as everywhere else in RouteLens.
 
 ## A worked example
 
+[flows-walkthrough.md](flows-walkthrough.md) builds the flow below in the UI click by
+click, then follows the run through the engine.
+
+
 [`docs/examples/fastapi-user-lifecycle.yaml`](examples/fastapi-user-lifecycle.yaml) is a
 flow for the FastAPI fixture in `tests/fixtures/fastapi`: health → create a user → fetch it
 → *if it is a new row* → delete → confirm 404, plus an items chain across the `/v1` and
