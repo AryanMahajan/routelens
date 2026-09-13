@@ -20,6 +20,7 @@ rl-core.workspace = true
 rl-model.workspace = true
 rl-workspace.workspace = true
 rl-http.workspace = true
+rl-flow.workspace = true
 rl-import.workspace = true
 rl-discovery.workspace = true
 serde.workspace = true

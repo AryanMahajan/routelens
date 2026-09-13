@@ -19,6 +19,7 @@ rl-model = { path = "crates/rl-model" }
 rl-discovery = { path = "crates/rl-discovery" }
 rl-import = { path = "crates/rl-import" }
 rl-http = { path = "crates/rl-http" }
+rl-flow = { path = "crates/rl-flow" }
 rl-workspace = { path = "crates/rl-workspace" }
 rl-core = { path = "crates/rl-core" }
 

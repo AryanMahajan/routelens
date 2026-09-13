@@ -2896,6 +2896,7 @@ name = "rl-core"
 version = "0.1.0"
 dependencies = [
  "rl-discovery",
+ "rl-flow",
  "rl-http",
  "rl-import",
  "rl-model",
@@ -2922,6 +2923,18 @@ dependencies = [
  "tree-sitter-javascript",
  "tree-sitter-python",
  "tree-sitter-typescript",
+]
+
+[[package]]
+name = "rl-flow"
+version = "0.1.0"
+dependencies = [
+ "rl-http",
+ "rl-model",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -2981,6 +2994,7 @@ version = "0.1.0"
 dependencies = [
  "rl-core",
  "rl-discovery",
+ "rl-flow",
  "rl-http",
  "rl-import",
  "rl-model",

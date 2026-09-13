@@ -8,11 +8,13 @@
 //! decisions, the decision belongs in `rl-core` instead.
 
 use rl_core::{EnrichProposal, ProjectScan, RouteLens, SaveAllReport, WorkspaceInfo};
+use rl_flow::{FlowEvent, FlowRun};
 use rl_http::Exchange;
-use rl_model::RequestDraft;
+use rl_model::{Flow, RequestDraft};
 use rl_workspace::{Collection, Environment, HistoryEntry, WorkspaceKind};
 use serde::Serialize;
 use std::path::PathBuf;
+use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -181,6 +183,47 @@ async fn save_request(
     request: RequestDraft,
 ) -> CommandResult<()> {
     Ok(state.app.lock().await.save_request(&collection, request)?)
+}
+
+// --- flows -------------------------------------------------------------------------------
+
+#[tauri::command]
+async fn load_flow(state: State<'_, AppState>, name: String) -> CommandResult<Flow> {
+    Ok(state.app.lock().await.load_flow(&name)?)
+}
+
+#[tauri::command]
+async fn save_flow(state: State<'_, AppState>, flow: Flow) -> CommandResult<()> {
+    Ok(state.app.lock().await.save_flow(&flow)?)
+}
+
+#[tauri::command]
+async fn delete_flow(state: State<'_, AppState>, name: String) -> CommandResult<()> {
+    Ok(state.app.lock().await.delete_flow(&name)?)
+}
+
+#[tauri::command]
+async fn rename_flow(state: State<'_, AppState>, from: String, to: String) -> CommandResult<()> {
+    Ok(state.app.lock().await.rename_flow(&from, &to)?)
+}
+
+/// Run a flow, streaming each step over `on_event` as it happens.
+///
+/// The application lock is held only long enough to capture the environment; the run
+/// itself proceeds without it, so the rest of the UI keeps working while a flow is in
+/// progress.
+#[tauri::command]
+async fn run_flow(
+    state: State<'_, AppState>,
+    flow: Flow,
+    on_event: Channel<FlowEvent>,
+) -> CommandResult<FlowRun> {
+    let prepared = state.app.lock().await.prepare_flow(flow)?;
+    let mut forward = move |event: FlowEvent| {
+        // A closed channel means the window went away; the run still completes and returns.
+        let _ = on_event.send(event);
+    };
+    Ok(prepared.run(&mut forward).await?)
 }
 
 // --- discovery ---------------------------------------------------------------------------
@@ -380,6 +423,11 @@ pub fn run() {
             delete_collection,
             rename_collection,
             save_request,
+            load_flow,
+            save_flow,
+            delete_flow,
+            rename_flow,
+            run_flow,
             scan_project,
             save_scan_as_collection,
             open_endpoint,

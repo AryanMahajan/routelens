@@ -18,6 +18,9 @@ pub enum WorkspaceError {
     #[error("no environment named {0:?}")]
     NoSuchEnvironment(String),
 
+    #[error("no flow named {0:?}")]
+    NoSuchFlow(String),
+
     #[error(
         "workspace version {found} was written by a newer RouteLens; this build understands \
          version {supported}"

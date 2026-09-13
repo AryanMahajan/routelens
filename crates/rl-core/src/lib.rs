@@ -37,6 +37,14 @@
 //!
 //! Step 4 cannot be skipped by accident: [`rl_workspace::History::record`] accepts only a
 //! `RedactedEntry`.
+//!
+//! ## Flows
+//!
+//! A flow run is the same path, once per node, driven by `rl-flow`. [`RouteLens::prepare_flow`]
+//! captures what a run needs — the engine, the active environment's variables, a history
+//! handle — into a [`PreparedFlow`] that runs *without* the application lock, so the UI stays
+//! usable while a long flow is in progress. Every request the flow sends lands in history,
+//! redacted, exactly as a single send does.
 
 #![forbid(unsafe_code)]
 
@@ -46,14 +54,16 @@ pub use error::{CoreError, Result};
 
 use rl_discovery::enrich::{self, AppTarget, Interpreter, Provenance};
 use rl_discovery::{ProjectContext, ScanResult};
+use rl_flow::{Failure, FlowEvent, FlowRun, NodeResult, Outcome};
 use rl_http::{Exchange, HttpEngine};
 use rl_import::{Imported, OpenApiImport};
-use rl_model::{Confidence, EndpointSpec, Origin, RequestDraft, VariableContext};
+use rl_model::{Confidence, EndpointSpec, Flow, Origin, RequestDraft, VariableContext};
 use rl_workspace::{
     Collection, Environment, History, HistoryEntry, NewEntry, SecretStore, Workspace, WorkspaceKind,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// A summary of the open workspace, for the UI.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +73,8 @@ pub struct WorkspaceInfo {
     pub kind: WorkspaceKind,
     pub collections: Vec<String>,
     pub environments: Vec<String>,
+    #[serde(default)]
+    pub flows: Vec<String>,
     pub active_environment: Option<String>,
     /// Secret names the active environment expects but the store does not hold.
     pub missing_secrets: Vec<String>,
@@ -226,7 +238,8 @@ pub struct RouteLens {
     data_dir: PathBuf,
     workspace: Option<Workspace>,
     active_environment: Option<String>,
-    engine: HttpEngine,
+    /// Shared with in-progress flow runs, which outlive the lock on the application.
+    engine: Arc<HttpEngine>,
     /// Kept so the UI can open an endpoint by id without rescanning.
     last_scan: Option<ScanResult>,
     /// The last runtime-enrich report, cleared by a rescan.
@@ -250,7 +263,7 @@ impl RouteLens {
             data_dir: data_dir.into(),
             workspace: None,
             active_environment: None,
-            engine: HttpEngine::default(),
+            engine: Arc::new(HttpEngine::default()),
             last_scan: None,
             last_enrich: None,
         }
@@ -354,6 +367,7 @@ impl RouteLens {
             kind: manifest.kind,
             collections: workspace.collection_names()?,
             environments: workspace.environment_names()?,
+            flows: workspace.flow_names()?,
             active_environment: self.active_environment.clone(),
             missing_secrets,
         })
@@ -511,6 +525,63 @@ impl RouteLens {
         workspace.save_collection(&collection)?;
         workspace.delete_collection(from)?;
         Ok(())
+    }
+
+    // --- flows --------------------------------------------------------------------------
+
+    pub fn flow_names(&self) -> Result<Vec<String>> {
+        Ok(self.workspace()?.flow_names()?)
+    }
+
+    pub fn load_flow(&self, name: &str) -> Result<Flow> {
+        Ok(self.workspace()?.load_flow(name)?)
+    }
+
+    pub fn save_flow(&self, flow: &Flow) -> Result<()> {
+        Ok(self.workspace()?.save_flow(flow)?)
+    }
+
+    pub fn delete_flow(&self, name: &str) -> Result<()> {
+        Ok(self.workspace()?.delete_flow(name)?)
+    }
+
+    /// Rename a flow: the file moves, the graph is untouched.
+    pub fn rename_flow(&self, from: &str, to: &str) -> Result<()> {
+        let workspace = self.workspace()?;
+        let mut flow = workspace.load_flow(from)?;
+        if from != to && workspace.load_flow(to).is_ok() {
+            return Err(CoreError::FlowExists {
+                name: to.to_string(),
+            });
+        }
+        flow.name = to.to_string();
+        workspace.save_flow(&flow)?;
+        if from != to {
+            workspace.delete_flow(from)?;
+        }
+        Ok(())
+    }
+
+    /// Everything a flow run needs, captured so the run itself can proceed without holding
+    /// the application: the engine, the active environment's variables, and history.
+    ///
+    /// The flow is checked for structural problems here — a cycle, a dangling edge — so a
+    /// broken graph is refused before the first request rather than mid-run.
+    pub fn prepare_flow(&self, flow: Flow) -> Result<PreparedFlow> {
+        flow.validate()?;
+        let (variables, history) = match self.workspace.as_ref() {
+            Some(workspace) => (
+                workspace.variable_context(self.active_environment.as_deref())?,
+                workspace.history().ok(),
+            ),
+            None => (VariableContext::new(), None),
+        };
+        Ok(PreparedFlow {
+            flow,
+            variables,
+            engine: Arc::clone(&self.engine),
+            history,
+        })
     }
 
     // --- discovery ----------------------------------------------------------------------
@@ -931,6 +1002,80 @@ impl RouteLens {
     }
 }
 
+/// A flow about to run. See [`RouteLens::prepare_flow`].
+pub struct PreparedFlow {
+    flow: Flow,
+    variables: VariableContext,
+    engine: Arc<HttpEngine>,
+    history: Option<History>,
+}
+
+impl std::fmt::Debug for PreparedFlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedFlow")
+            .field("flow", &self.flow.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PreparedFlow {
+    pub fn flow(&self) -> &Flow {
+        &self.flow
+    }
+
+    /// Run it. `on_event` sees every step as it happens; the return value is the whole run.
+    ///
+    /// Each request node that reached the network is recorded in history, redacted, whether
+    /// it passed or not — "the login step returned 401" is worth keeping.
+    pub async fn run(mut self, on_event: &mut (dyn FnMut(FlowEvent) + Send)) -> Result<FlowRun> {
+        let PreparedFlow {
+            flow,
+            variables,
+            engine,
+            history,
+        } = &mut self;
+
+        // `history` is captured mutably on purpose: a SQLite connection is `Send` but not
+        // `Sync`, and the closure has to be `Send` to run inside an async command.
+        let mut forward = |event: FlowEvent| {
+            if let FlowEvent::NodeFinished { result } = &event {
+                if let (Some(history), Some(entry)) = (history.as_mut(), flow_entry(result)) {
+                    let _ = history.record(&entry.redacted(variables));
+                }
+            }
+            on_event(event);
+        };
+
+        Ok(rl_flow::run(flow, variables, engine.as_ref(), &mut forward).await?)
+    }
+}
+
+/// The history row for one finished request node, if it got as far as being resolved.
+fn flow_entry(result: &NodeResult) -> Option<NewEntry> {
+    let sent = result.request.as_ref()?;
+    let mut entry = NewEntry::new(sent.method.to_string(), sent.url_with_path_values());
+    match (&result.exchange, &result.outcome) {
+        (Some(exchange), _) => {
+            entry.status = Some(exchange.response.status);
+            entry.duration_ms = Some(exchange.response.timing.total_ms);
+            entry.request = serde_json::to_value(&exchange.request).unwrap_or_default();
+            entry.response = serde_json::to_value(&exchange.response).ok();
+        }
+        (
+            None,
+            Outcome::Failed {
+                failure: Failure::Transport { message },
+            },
+        ) => {
+            entry.error = Some(message.clone());
+            entry.request = serde_json::to_value(sent).unwrap_or_default();
+        }
+        // Resolved but never sent for any other reason: nothing happened on the wire.
+        _ => return None,
+    }
+    Some(entry)
+}
+
 fn describe_frameworks(scan: &ScanResult) -> String {
     if scan.frameworks.is_empty() {
         "not a recognised framework".to_string()
@@ -1262,6 +1407,188 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert!(history[0].error.is_some());
         assert_eq!(history[0].status, None);
+    }
+
+    // --- flows --------------------------------------------------------------------------
+
+    #[test]
+    fn flows_are_listed_saved_renamed_and_deleted() {
+        let (_dir, app) = app();
+        assert!(app.info().unwrap().flows.is_empty());
+
+        let mut flow = Flow::new("smoke");
+        flow.add(rl_model::Node::request(RequestDraft::new(
+            HttpMethod::Get,
+            "{{base_url}}/health",
+        )));
+        app.save_flow(&flow).unwrap();
+        assert_eq!(app.info().unwrap().flows, vec!["smoke"]);
+        assert_eq!(app.load_flow("smoke").unwrap(), flow);
+
+        app.rename_flow("smoke", "health check").unwrap();
+        assert_eq!(app.flow_names().unwrap(), vec!["health check"]);
+        assert_eq!(app.load_flow("health check").unwrap().nodes, flow.nodes);
+
+        app.save_flow(&Flow::new("other")).unwrap();
+        assert!(matches!(
+            app.rename_flow("health check", "other"),
+            Err(CoreError::FlowExists { .. })
+        ));
+
+        app.delete_flow("health check").unwrap();
+        assert_eq!(app.flow_names().unwrap(), vec!["other"]);
+    }
+
+    #[test]
+    fn a_flow_with_a_cycle_is_refused_before_anything_runs() {
+        let (_dir, app) = app();
+        let mut flow = Flow::new("loop");
+        let a = flow.add(rl_model::Node::request(RequestDraft::new(
+            HttpMethod::Get,
+            "http://x/a",
+        )));
+        let b = flow.add(rl_model::Node::request(RequestDraft::new(
+            HttpMethod::Get,
+            "http://x/b",
+        )));
+        flow.connect(&a, &b);
+        flow.connect(&b, &a);
+        assert!(matches!(app.prepare_flow(flow), Err(CoreError::Flow(_))));
+    }
+
+    /// A one-connection-at-a-time HTTP/1.1 server that plays a tiny API: `POST /login`
+    /// hands out a token, `GET /me` demands it. Enough to prove a flow chains for real.
+    async fn tiny_api() -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let line = request.lines().next().unwrap_or_default().to_string();
+                    let authed = request
+                        .lines()
+                        .any(|l| l.eq_ignore_ascii_case("authorization: Bearer tok-secret-1"));
+                    let (status, body) = if line.starts_with("POST /login") {
+                        (200, r#"{"access_token":"tok-secret-1"}"#)
+                    } else if line.starts_with("GET /me") && authed {
+                        (200, r#"{"user":{"id":7}}"#)
+                    } else if line.starts_with("GET /me") {
+                        (401, r#"{"detail":"missing token"}"#)
+                    } else if line.starts_with("GET /users/7") {
+                        (200, r#"{"id":7,"name":"Aryan"}"#)
+                    } else {
+                        (404, r#"{"detail":"no"}"#)
+                    };
+                    let response = format!(
+                        "HTTP/1.1 {status} X
+content-type: application/json
+content-length: {}
+connection: close
+
+{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+        base
+    }
+
+    #[tokio::test]
+    async fn a_flow_runs_end_to_end_records_history_and_redacts_extracted_secrets() {
+        use rl_model::{Assertion, Extraction, KeyValue, Node, NodeKind, ValueSource};
+
+        let (_dir, mut app) = app();
+        let base = tiny_api().await;
+        let mut env = Environment::new("local");
+        env.set("base_url", &base);
+        app.save_environment(&env).unwrap();
+        app.set_active_environment(Some("local")).unwrap();
+        // The token the API hands out is also a known secret, so history must not show it.
+        app.set_secret("api_token", "tok-secret-1").unwrap();
+
+        let mut flow = Flow::new("login");
+        let mut login = Node::request(RequestDraft::new(HttpMethod::Post, "{{base_url}}/login"));
+        if let NodeKind::Request {
+            extract, assert, ..
+        } = &mut login.kind
+        {
+            extract.push(Extraction {
+                name: "auth_token".into(),
+                source: ValueSource::Body {
+                    path: "access_token".into(),
+                },
+            });
+            assert.push(Assertion::status_ok());
+        }
+        let login = flow.add(login);
+
+        let mut me_draft = RequestDraft::new(HttpMethod::Get, "{{base_url}}/me");
+        me_draft
+            .headers
+            .push(KeyValue::new("Authorization", "Bearer {{auth_token}}"));
+        let mut me = Node::request(me_draft);
+        if let NodeKind::Request { extract, .. } = &mut me.kind {
+            extract.push(Extraction {
+                name: "user_id".into(),
+                source: ValueSource::Body {
+                    path: "user.id".into(),
+                },
+            });
+        }
+        let me = flow.add(me);
+
+        let mut user = Node::request(RequestDraft::new(
+            HttpMethod::Get,
+            "{{base_url}}/users/{{user_id}}",
+        ));
+        if let NodeKind::Request { assert, .. } = &mut user.kind {
+            assert.push(Assertion {
+                source: ValueSource::Body {
+                    path: "name".into(),
+                },
+                op: rl_model::Operator::Equals,
+                expected: "Aryan".into(),
+            });
+        }
+        let user = flow.add(user);
+        flow.connect(&login, &me);
+        flow.connect(&me, &user);
+
+        let mut events = 0;
+        let run = app
+            .prepare_flow(flow)
+            .unwrap()
+            .run(&mut |_| events += 1)
+            .await
+            .unwrap();
+        assert!(run.passed(), "{:#?}", run.results);
+        assert_eq!(events, 1 + 3 * 2 + 1);
+        assert_eq!(run.variables["user_id"], "7");
+        assert_eq!(
+            run.result(&user)
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .url_with_path_values(),
+            format!("{base}/users/7")
+        );
+
+        // Three rows, newest first, with the token nowhere in them.
+        let history = app.history(10).unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].url, format!("{base}/users/7"));
+        assert_eq!(history[2].method, "POST");
+        let dumped = serde_json::to_string(&history).unwrap();
+        assert!(!dumped.contains("tok-secret-1"), "{dumped}");
+        assert!(dumped.contains(rl_model::REDACTION));
     }
 
     #[test]

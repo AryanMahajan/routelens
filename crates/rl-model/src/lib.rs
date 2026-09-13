@@ -24,6 +24,9 @@
 //! [`RequestDraft`] is a request you can *send*: concrete values and a real URL, with no
 //! source location.
 //!
+//! [`Flow`] is several drafts wired into a test: a graph whose edges say what runs after
+//! what, and whose nodes say what to extract from each response and what to assert.
+//!
 //! They are separate on purpose. Collapsing them looks tempting early and costs later —
 //! history entries acquire meaningless source fields, discovered routes acquire meaningless
 //! value fields, and every consumer has to check which kind it actually holds.
@@ -36,6 +39,7 @@
 //! developer will blame on their own code.
 
 pub mod draft;
+pub mod flow;
 pub mod method;
 pub mod path;
 pub mod spec;
@@ -43,6 +47,10 @@ pub mod vars;
 
 pub use draft::{
     AuthConfig, BodyValue, FormPart, KeyValue, RequestDraft, RequestId, RequestSettings,
+};
+pub use flow::{
+    Assertion, Edge, Extraction, Flow, FlowError, Node, NodeId, NodeKind, Operator, Position,
+    ValueSource, HANDLE_FALSE, HANDLE_TRUE,
 };
 pub use method::HttpMethod;
 pub use path::{ParamStyle, PathSegment, PathTemplate, TypeHint};

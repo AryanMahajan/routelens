@@ -8,6 +8,7 @@
 //! ├── workspace.yaml       committed
 //! ├── collections/*.yaml   committed
 //! ├── environments/*.yaml  committed — secret NAMES only, never values
+//! ├── flows/*.yaml         committed — multi-step API tests, one graph per file
 //! ├── .gitignore           committed — written automatically, ignores local/
 //! └── local/               never committed
 //!     ├── secrets.json     private   — or an OS keychain reference
@@ -23,7 +24,7 @@
 //!
 //! | Tier | Committed | Safe to delete |
 //! |---|---|---|
-//! | Shared — collections, environments | yes | no, it is real work |
+//! | Shared — collections, environments, flows | yes | no, it is real work |
 //! | Private — secret values | no | no, they are real credentials |
 //! | Disposable — history, index | no | yes, it rebuilds |
 //!

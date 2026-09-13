@@ -1,0 +1,623 @@
+//! [`Flow`] — a multi-step API test, as a graph.
+//!
+//! A flow is the document a developer builds on the canvas: request nodes wired together so
+//! that what one response returns feeds the next request. The model here is *only* the
+//! document — nodes, edges, what to extract, what to assert. Running one is `rl-flow`'s job.
+//!
+//! ## What a node is
+//!
+//! A [`Node`] is a [`RequestDraft`] plus the two things a test does with its response:
+//! [`Extraction`]s that turn parts of it into `{{variables}}` for later nodes, and
+//! [`Assertion`]s that decide whether the step passed. Both sit *on* the request rather than
+//! being nodes of their own, so a five-call flow is five cards on the canvas, not fifteen.
+//!
+//! A [`NodeKind::Condition`] is the one other kind: it compares two interpolated strings and
+//! sends the run down its `true` or `false` output.
+//!
+//! ## Order comes from the edges
+//!
+//! Edges are dependencies. [`Flow::execution_order`] is a topological sort — where two nodes
+//! are independent the tie is broken by their position in [`Flow::nodes`], never by where
+//! they sit on the canvas. Moving a card around must not change what the test does.
+//!
+//! ## Provenance
+//!
+//! A node built from a discovered endpoint keeps [`RequestDraft::spec_ref`], which is what
+//! lets the canvas jump from a card to the handler that serves it.
+
+use crate::draft::RequestDraft;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub const CURRENT_VERSION: u32 = 1;
+
+/// The output of a [`NodeKind::Condition`] taken when the predicate holds.
+pub const HANDLE_TRUE: &str = "true";
+/// The output of a [`NodeKind::Condition`] taken when the predicate does not hold.
+pub const HANDLE_FALSE: &str = "false";
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct NodeId(String);
+
+impl NodeId {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        NodeId(uuid::Uuid::new_v4().to_string())
+    }
+
+    pub fn from_raw(raw: impl Into<String>) -> Self {
+        NodeId(raw.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Where a node sits on the canvas. Part of the document, never part of its meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Position {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Where a value comes from — for an extraction or the left side of an assertion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "from", rename_all = "snake_case")]
+pub enum ValueSource {
+    /// The HTTP status code, as a number.
+    Status,
+    /// A response header, case-insensitively. The first one when repeated. The field is
+    /// `header` rather than `name` because this enum is flattened into [`Extraction`],
+    /// which already has a `name`.
+    Header { header: String },
+    /// A path into the response body parsed as JSON: `user.id`, `items[0].name`, `$` for
+    /// the whole document. Scalars are extracted as their plain text; objects and arrays as
+    /// compact JSON.
+    Body { path: String },
+    /// The body as text, whole.
+    BodyText,
+    /// How long the exchange took, in milliseconds.
+    Duration,
+}
+
+/// Turn part of a response into a variable for the nodes that follow.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Extraction {
+    /// The variable name later nodes reference as `{{name}}`.
+    pub name: String,
+    #[serde(flatten)]
+    pub source: ValueSource,
+}
+
+/// How an assertion or condition compares its two sides.
+///
+/// When both sides parse as numbers the comparison is numeric, so `"200"` equals `200` and
+/// `"9"` is not greater than `"10"`. Otherwise it is a plain string comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Operator {
+    Equals,
+    NotEquals,
+    Contains,
+    NotContains,
+    /// The value is present at all — a header that was sent, a body path that resolves.
+    /// The right-hand side is ignored.
+    Exists,
+    NotExists,
+    GreaterThan,
+    LessThan,
+}
+
+impl Operator {
+    pub const ALL: [Operator; 8] = [
+        Operator::Equals,
+        Operator::NotEquals,
+        Operator::Contains,
+        Operator::NotContains,
+        Operator::Exists,
+        Operator::NotExists,
+        Operator::GreaterThan,
+        Operator::LessThan,
+    ];
+
+    /// Whether the operator looks at the right-hand side at all.
+    pub fn is_unary(self) -> bool {
+        matches!(self, Operator::Exists | Operator::NotExists)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Operator::Equals => "equals",
+            Operator::NotEquals => "not_equals",
+            Operator::Contains => "contains",
+            Operator::NotContains => "not_contains",
+            Operator::Exists => "exists",
+            Operator::NotExists => "not_exists",
+            Operator::GreaterThan => "greater_than",
+            Operator::LessThan => "less_than",
+        }
+    }
+}
+
+/// A check on a response. Any failing assertion fails its node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Assertion {
+    #[serde(flatten)]
+    pub source: ValueSource,
+    pub op: Operator,
+    /// May contain `{{variables}}`. Ignored by unary operators.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub expected: String,
+}
+
+impl Assertion {
+    /// The check a freshly added request node starts with: it did not fail.
+    pub fn status_ok() -> Self {
+        Assertion {
+            source: ValueSource::Status,
+            op: Operator::LessThan,
+            expected: "400".to_string(),
+        }
+    }
+}
+
+/// What a node does.
+// Nearly every node is a request; boxing the common case to slim the rare one would be
+// the wrong trade, and a flow holds a handful of nodes, not millions.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum NodeKind {
+    /// Send a request, then extract and assert on what came back.
+    Request {
+        request: RequestDraft,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        extract: Vec<Extraction>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        assert: Vec<Assertion>,
+    },
+    /// Compare two interpolated strings and continue down one of two outputs.
+    Condition {
+        left: String,
+        op: Operator,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        right: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Node {
+    pub id: NodeId,
+    /// A label for the card. Falls back to the request's name or display in the UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub position: Position,
+    #[serde(flatten)]
+    pub kind: NodeKind,
+}
+
+impl Node {
+    pub fn request(request: RequestDraft) -> Self {
+        Node {
+            id: NodeId::new(),
+            name: None,
+            position: Position::default(),
+            kind: NodeKind::Request {
+                request,
+                extract: Vec::new(),
+                assert: Vec::new(),
+            },
+        }
+    }
+
+    pub fn condition(left: impl Into<String>, op: Operator, right: impl Into<String>) -> Self {
+        Node {
+            id: NodeId::new(),
+            name: None,
+            position: Position::default(),
+            kind: NodeKind::Condition {
+                left: left.into(),
+                op,
+                right: right.into(),
+            },
+        }
+    }
+
+    pub fn at(mut self, x: f64, y: f64) -> Self {
+        self.position = Position { x, y };
+        self
+    }
+
+    pub fn is_condition(&self) -> bool {
+        matches!(self.kind, NodeKind::Condition { .. })
+    }
+
+    /// The outputs this node has. A request has one, unnamed; a condition has two.
+    pub fn handles(&self) -> &'static [&'static str] {
+        match self.kind {
+            NodeKind::Request { .. } => &[],
+            NodeKind::Condition { .. } => &[HANDLE_TRUE, HANDLE_FALSE],
+        }
+    }
+}
+
+/// A dependency: `to` runs after `from`, and only if `from` passed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edge {
+    pub from: NodeId,
+    pub to: NodeId,
+    /// Which output of `from` this leaves — [`HANDLE_TRUE`] or [`HANDLE_FALSE`] on a
+    /// condition, absent on a request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+impl Edge {
+    pub fn new(from: &NodeId, to: &NodeId) -> Self {
+        Edge {
+            from: from.clone(),
+            to: to.clone(),
+            handle: None,
+        }
+    }
+
+    pub fn via(mut self, handle: &str) -> Self {
+        self.handle = Some(handle.to_string());
+        self
+    }
+}
+
+/// A saved flow: one file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Flow {
+    #[serde(default = "default_version")]
+    pub version: u32,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub edges: Vec<Edge>,
+}
+
+fn default_version() -> u32 {
+    CURRENT_VERSION
+}
+
+/// Why a flow cannot run as written.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FlowError {
+    #[error("two nodes share the id {0}")]
+    DuplicateNode(NodeId),
+
+    #[error("an edge refers to a node that does not exist: {0}")]
+    DanglingEdge(NodeId),
+
+    #[error("node {node} has no output named {handle:?}")]
+    UnknownHandle { node: NodeId, handle: String },
+
+    #[error("node {0} is connected to itself")]
+    SelfLoop(NodeId),
+
+    /// A flow with a cycle has no first step. The nodes named are the ones left over once
+    /// everything that could be ordered was — the cycle, and whatever hangs off it.
+    #[error("the flow has a cycle through {}", .0.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", "))]
+    Cycle(Vec<NodeId>),
+}
+
+impl Flow {
+    pub fn new(name: impl Into<String>) -> Self {
+        Flow {
+            version: CURRENT_VERSION,
+            name: name.into(),
+            description: None,
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+
+    /// Add a node, returning its id.
+    pub fn add(&mut self, node: Node) -> NodeId {
+        let id = node.id.clone();
+        self.nodes.push(node);
+        id
+    }
+
+    /// Wire `from` into `to`.
+    pub fn connect(&mut self, from: &NodeId, to: &NodeId) {
+        self.edges.push(Edge::new(from, to));
+    }
+
+    pub fn node(&self, id: &NodeId) -> Option<&Node> {
+        self.nodes.iter().find(|n| &n.id == id)
+    }
+
+    /// The nodes with an edge into `id`, in edge order.
+    pub fn upstream<'a>(&'a self, id: &'a NodeId) -> impl Iterator<Item = &'a Edge> + 'a {
+        self.edges.iter().filter(move |e| &e.to == id)
+    }
+
+    /// Check the graph is something that can be run.
+    pub fn validate(&self) -> Result<(), FlowError> {
+        let mut seen = BTreeSet::new();
+        for node in &self.nodes {
+            if !seen.insert(&node.id) {
+                return Err(FlowError::DuplicateNode(node.id.clone()));
+            }
+        }
+
+        for edge in &self.edges {
+            let from = self
+                .node(&edge.from)
+                .ok_or_else(|| FlowError::DanglingEdge(edge.from.clone()))?;
+            if self.node(&edge.to).is_none() {
+                return Err(FlowError::DanglingEdge(edge.to.clone()));
+            }
+            if edge.from == edge.to {
+                return Err(FlowError::SelfLoop(edge.from.clone()));
+            }
+            let handles = from.handles();
+            match &edge.handle {
+                Some(handle) if !handles.contains(&handle.as_str()) => {
+                    return Err(FlowError::UnknownHandle {
+                        node: edge.from.clone(),
+                        handle: handle.clone(),
+                    });
+                }
+                None if !handles.is_empty() => {
+                    return Err(FlowError::UnknownHandle {
+                        node: edge.from.clone(),
+                        handle: String::new(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        self.execution_order().map(|_| ())
+    }
+
+    /// The order nodes run in: every node after everything it depends on.
+    ///
+    /// Kahn's algorithm, with ties broken by position in [`Flow::nodes`] so the order is
+    /// stable across runs and independent of where the cards sit on the canvas.
+    pub fn execution_order(&self) -> Result<Vec<NodeId>, FlowError> {
+        let index: BTreeMap<&NodeId, usize> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (&n.id, i))
+            .collect();
+
+        let mut indegree: Vec<usize> = vec![0; self.nodes.len()];
+        let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); self.nodes.len()];
+        for edge in &self.edges {
+            let (Some(&from), Some(&to)) = (index.get(&edge.from), index.get(&edge.to)) else {
+                return Err(FlowError::DanglingEdge(edge.from.clone()));
+            };
+            // The same dependency drawn twice is still one dependency.
+            if !outgoing[from].contains(&to) {
+                outgoing[from].push(to);
+                indegree[to] += 1;
+            }
+        }
+
+        // The ready set is ordered by document index, so whenever several nodes could go
+        // next the one added first does — not the one whose edge happened to be drawn first.
+        let mut ready: BTreeSet<usize> = (0..self.nodes.len())
+            .filter(|&i| indegree[i] == 0)
+            .collect();
+        let mut order = Vec::with_capacity(self.nodes.len());
+
+        while let Some(current) = ready.pop_first() {
+            order.push(current);
+            for &next in &outgoing[current] {
+                indegree[next] -= 1;
+                if indegree[next] == 0 {
+                    ready.insert(next);
+                }
+            }
+        }
+
+        if order.len() != self.nodes.len() {
+            let stuck = (0..self.nodes.len())
+                .filter(|i| !order.contains(i))
+                .map(|i| self.nodes[i].id.clone())
+                .collect();
+            return Err(FlowError::Cycle(stuck));
+        }
+
+        Ok(order
+            .into_iter()
+            .map(|i| self.nodes[i].id.clone())
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::HttpMethod;
+
+    fn get(url: &str) -> Node {
+        Node::request(RequestDraft::new(HttpMethod::Get, url))
+    }
+
+    /// login → me → user, the shape from the feature brief.
+    fn chain() -> (Flow, NodeId, NodeId, NodeId) {
+        let mut flow = Flow::new("smoke");
+        let login = flow.add(get("{{base_url}}/auth/login"));
+        let me = flow.add(get("{{base_url}}/me"));
+        let user = flow.add(get("{{base_url}}/users/{{user_id}}"));
+        flow.connect(&login, &me);
+        flow.connect(&me, &user);
+        (flow, login, me, user)
+    }
+
+    #[test]
+    fn a_chain_runs_in_dependency_order() {
+        let (flow, login, me, user) = chain();
+        assert_eq!(flow.execution_order().unwrap(), vec![login, me, user]);
+        flow.validate().unwrap();
+    }
+
+    #[test]
+    fn order_follows_edges_not_document_or_canvas_position() {
+        let mut flow = Flow::new("reversed");
+        // Added last and drawn at the top: still runs first, because the edges say so.
+        let second = flow.add(get("/second").at(0.0, 100.0));
+        let first = flow.add(get("/first").at(0.0, 0.0));
+        flow.connect(&first, &second);
+        assert_eq!(flow.execution_order().unwrap(), vec![first, second]);
+    }
+
+    #[test]
+    fn independent_nodes_keep_document_order() {
+        let mut flow = Flow::new("fan-out");
+        let root = flow.add(get("/root"));
+        let a = flow.add(get("/a"));
+        let b = flow.add(get("/b"));
+        // Edges drawn b-first must not make b run first.
+        flow.connect(&root, &b);
+        flow.connect(&root, &a);
+        assert_eq!(flow.execution_order().unwrap(), vec![root, a, b]);
+    }
+
+    #[test]
+    fn a_duplicate_edge_is_one_dependency() {
+        let mut flow = Flow::new("dup");
+        let a = flow.add(get("/a"));
+        let b = flow.add(get("/b"));
+        flow.connect(&a, &b);
+        flow.connect(&a, &b);
+        assert_eq!(flow.execution_order().unwrap(), vec![a, b]);
+    }
+
+    #[test]
+    fn a_cycle_is_refused_and_named() {
+        let (mut flow, login, _me, user) = chain();
+        flow.connect(&user, &login);
+        match flow.validate() {
+            Err(FlowError::Cycle(nodes)) => assert_eq!(nodes.len(), 3),
+            other => panic!("expected a cycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_cycle_off_to_the_side_does_not_hide_the_nodes_before_it() {
+        let mut flow = Flow::new("partial");
+        let start = flow.add(get("/start"));
+        let a = flow.add(get("/a"));
+        let b = flow.add(get("/b"));
+        flow.connect(&start, &a);
+        flow.connect(&a, &b);
+        flow.connect(&b, &a);
+        match flow.execution_order() {
+            Err(FlowError::Cycle(nodes)) => {
+                assert!(!nodes.contains(&start));
+                assert_eq!(nodes, vec![a, b]);
+            }
+            other => panic!("expected a cycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn structural_problems_are_reported_precisely() {
+        let mut flow = Flow::new("bad");
+        let a = flow.add(get("/a"));
+        flow.nodes.push(flow.nodes[0].clone());
+        assert!(matches!(flow.validate(), Err(FlowError::DuplicateNode(_))));
+        flow.nodes.pop();
+
+        flow.edges.push(Edge::new(&a, &NodeId::from_raw("ghost")));
+        assert!(matches!(flow.validate(), Err(FlowError::DanglingEdge(_))));
+        flow.edges.clear();
+
+        flow.edges.push(Edge::new(&a, &a));
+        assert!(matches!(flow.validate(), Err(FlowError::SelfLoop(_))));
+        flow.edges.clear();
+
+        // A request has one unnamed output; a named handle on it is a mistake.
+        let b = flow.add(get("/b"));
+        flow.edges.push(Edge::new(&a, &b).via("true"));
+        assert!(matches!(
+            flow.validate(),
+            Err(FlowError::UnknownHandle { .. })
+        ));
+        flow.edges.clear();
+
+        // A condition has two named outputs; an unnamed edge does not say which.
+        let cond = flow.add(Node::condition("{{x}}", Operator::Equals, "1"));
+        flow.edges.push(Edge::new(&cond, &b));
+        assert!(matches!(
+            flow.validate(),
+            Err(FlowError::UnknownHandle { .. })
+        ));
+        flow.edges.clear();
+        flow.edges.push(Edge::new(&cond, &b).via(HANDLE_TRUE));
+        flow.validate().unwrap();
+    }
+
+    /// The YAML on disk is what a reviewer reads in a pull request, so it must stay flat
+    /// and obvious: a node is its request plus `extract` and `assert` lists.
+    #[test]
+    fn round_trips_through_json_with_a_readable_shape() {
+        let (mut flow, login, ..) = chain();
+        if let NodeKind::Request {
+            extract, assert, ..
+        } = &mut flow.nodes[0].kind
+        {
+            extract.push(Extraction {
+                name: "token".into(),
+                source: ValueSource::Body {
+                    path: "access_token".into(),
+                },
+            });
+            assert.push(Assertion::status_ok());
+        }
+        flow.nodes[0].id = login;
+
+        let text = serde_json::to_string_pretty(&flow).unwrap();
+        assert!(text.contains(r#""type": "request""#));
+        assert!(text.contains(r#""from": "body""#));
+        assert!(text.contains(r#""path": "access_token""#));
+        assert!(text.contains(r#""op": "less_than""#));
+
+        let back: Flow = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, flow);
+    }
+
+    /// `Extraction` flattens its source, so no source variant may carry a field called
+    /// `name` — the JSON would have two of them and one would silently win.
+    #[test]
+    fn a_header_extraction_serializes_both_its_name_and_its_header() {
+        let e = Extraction {
+            name: "location".into(),
+            source: ValueSource::Header {
+                header: "Location".into(),
+            },
+        };
+        let json = serde_json::to_value(&e).unwrap();
+        assert_eq!(json["name"], "location");
+        assert_eq!(json["header"], "Location");
+        assert_eq!(json["from"], "header");
+        let back: Extraction = serde_json::from_value(json).unwrap();
+        assert_eq!(back, e);
+    }
+
+    #[test]
+    fn operators_know_which_ignore_the_right_hand_side() {
+        assert!(Operator::Exists.is_unary());
+        assert!(!Operator::Equals.is_unary());
+        assert_eq!(Operator::ALL.len(), 8);
+    }
+}

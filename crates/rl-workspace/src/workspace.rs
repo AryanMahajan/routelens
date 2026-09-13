@@ -5,7 +5,7 @@ use crate::environment::Environment;
 use crate::error::{Result, WorkspaceError};
 use crate::layout::{self, Layout};
 use crate::secrets::{FileSecretStore, SecretStore};
-use rl_model::VariableContext;
+use rl_model::{Flow, VariableContext};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -266,6 +266,36 @@ impl Workspace {
         let path = self.layout.environment_file(name)?;
         if !path.is_file() {
             return Err(WorkspaceError::NoSuchEnvironment(name.to_string()));
+        }
+        std::fs::remove_file(&path)
+            .map_err(|e| WorkspaceError::io(format!("deleting {}", path.display()), e))
+    }
+
+    // --- flows --------------------------------------------------------------------------
+
+    pub fn flow_names(&self) -> Result<Vec<String>> {
+        list_names(&self.layout.flows_dir())
+    }
+
+    pub fn load_flow(&self, name: &str) -> Result<Flow> {
+        let path = self.layout.flow_file(name)?;
+        if !path.is_file() {
+            return Err(WorkspaceError::NoSuchFlow(name.to_string()));
+        }
+        read_yaml(&path)
+    }
+
+    /// Write a flow as it is. Nothing is validated here — a half-built graph with a cycle
+    /// is still worth saving; it is refused when *run*, with the cycle named.
+    pub fn save_flow(&self, flow: &Flow) -> Result<()> {
+        let path = self.layout.flow_file(&flow.name)?;
+        write_yaml(&path, flow, &flow.name)
+    }
+
+    pub fn delete_flow(&self, name: &str) -> Result<()> {
+        let path = self.layout.flow_file(name)?;
+        if !path.is_file() {
+            return Err(WorkspaceError::NoSuchFlow(name.to_string()));
         }
         std::fs::remove_file(&path)
             .map_err(|e| WorkspaceError::io(format!("deleting {}", path.display()), e))
@@ -689,6 +719,73 @@ mod tests {
         ws.save_environment(&env).unwrap();
         assert_eq!(ws.load_environment("local").unwrap(), env);
         assert_eq!(ws.environment_names().unwrap(), vec!["local"]);
+    }
+
+    /// A flow file is reviewed in pull requests like a collection is, so it must read as
+    /// what it is: a list of requests with `extract` and `assert` beside each, and edges.
+    #[test]
+    fn flows_round_trip_as_readable_yaml_and_list_and_delete() {
+        use rl_model::{
+            Assertion, Extraction, Flow, HttpMethod, Node, NodeKind, RequestDraft, ValueSource,
+        };
+
+        let (_dir, ws) = workspace();
+        assert!(ws.flow_names().unwrap().is_empty());
+
+        let mut flow = Flow::new("login smoke");
+        let mut login = Node::request(RequestDraft::new(
+            HttpMethod::Post,
+            "{{base_url}}/auth/login",
+        ))
+        .at(40.0, 80.0);
+        if let NodeKind::Request {
+            extract, assert, ..
+        } = &mut login.kind
+        {
+            extract.push(Extraction {
+                name: "auth_token".into(),
+                source: ValueSource::Body {
+                    path: "access_token".into(),
+                },
+            });
+            assert.push(Assertion::status_ok());
+        }
+        let login = flow.add(login);
+        let me = flow.add(Node::request(RequestDraft::new(
+            HttpMethod::Get,
+            "{{base_url}}/me",
+        )));
+        flow.connect(&login, &me);
+
+        ws.save_flow(&flow).unwrap();
+        assert_eq!(ws.flow_names().unwrap(), vec!["login smoke"]);
+        assert_eq!(ws.load_flow("login smoke").unwrap(), flow);
+
+        let text = std::fs::read_to_string(ws.layout().flow_file("login smoke").unwrap()).unwrap();
+        for expected in [
+            "type: request",
+            "extract:",
+            "name: auth_token",
+            "from: body",
+            "path: access_token",
+            "assert:",
+            "op: less_than",
+            "expected: '400'",
+            "edges:",
+        ] {
+            assert!(
+                text.contains(expected),
+                "expected {expected:?} in:
+{text}"
+            );
+        }
+
+        ws.delete_flow("login smoke").unwrap();
+        assert!(matches!(
+            ws.load_flow("login smoke"),
+            Err(WorkspaceError::NoSuchFlow(_))
+        ));
+        assert!(ws.flow_names().unwrap().is_empty());
     }
 
     #[test]

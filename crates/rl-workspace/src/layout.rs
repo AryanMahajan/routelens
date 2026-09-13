@@ -14,6 +14,7 @@ pub const DIR_NAME: &str = ".routelens";
 pub const MANIFEST_FILE: &str = "workspace.yaml";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const ENVIRONMENTS_DIR: &str = "environments";
+pub const FLOWS_DIR: &str = "flows";
 pub const LOCAL_DIR: &str = "local";
 pub const SECRETS_FILE: &str = "secrets.json";
 pub const HISTORY_DB: &str = "history.sqlite";
@@ -112,6 +113,12 @@ impl Layout {
         self.dir().join(ENVIRONMENTS_DIR)
     }
 
+    /// Flows stay with the project: they are built from its discovered endpoints, and the
+    /// point is that whoever clones the repository gets the tests with it.
+    pub fn flows_dir(&self) -> PathBuf {
+        self.dir().join(FLOWS_DIR)
+    }
+
     pub fn gitignore(&self) -> PathBuf {
         self.dir().join(GITIGNORE_FILE)
     }
@@ -129,6 +136,10 @@ impl Layout {
 
     pub fn environment_file(&self, name: &str) -> Result<PathBuf> {
         Ok(self.environments_dir().join(file_stem(name)?))
+    }
+
+    pub fn flow_file(&self, name: &str) -> Result<PathBuf> {
+        Ok(self.flows_dir().join(file_stem(name)?))
     }
 
     // --- private and disposable tiers: never committed ----------------------------------
@@ -201,6 +212,7 @@ mod tests {
         let l = layout();
         assert!(l.manifest().ends_with(".routelens/workspace.yaml"));
         assert!(l.environments_dir().ends_with(".routelens/environments"));
+        assert!(l.flows_dir().ends_with(".routelens/flows"));
     }
 
     #[test]

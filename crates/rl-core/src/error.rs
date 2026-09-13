@@ -32,6 +32,13 @@ pub enum CoreError {
     #[error("a collection named {name:?} already exists")]
     CollectionExists { name: String },
 
+    #[error("a flow named {name:?} already exists")]
+    FlowExists { name: String },
+
+    /// The graph cannot be run as drawn. Refused before the first request goes out.
+    #[error("the flow cannot run: {0}")]
+    Flow(#[from] rl_model::FlowError),
+
     #[error("no source file at {}", .path.display())]
     NoSuchSource { path: std::path::PathBuf },
 
