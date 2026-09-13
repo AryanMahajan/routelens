@@ -73,6 +73,23 @@ fn the_sample_flow_matches_the_fixture_api() {
     // Everything ran except the arm the condition did not take.
     assert_eq!(run.summary.skipped, 1, "{:#?}", run.summary);
     assert!(run.variables.contains_key("user_id"));
+    // The inputs block ran first and the summary block read everything back.
+    assert_eq!(run.results[0].node.as_str(), "inputs");
+    let summary = run
+        .results
+        .iter()
+        .find(|r| r.node.as_str() == "summary")
+        .unwrap();
+    assert_eq!(
+        summary.output.as_deref(),
+        Some(
+            format!(
+                "Created Dana as user {} (Dana@example.com), then deleted them again.",
+                run.variables["user_id"]
+            )
+            .as_str()
+        )
+    );
     assert_eq!(
         run.variables["first_item"], "item-4",
         "page 2 of 3-per-page starts at item 4"

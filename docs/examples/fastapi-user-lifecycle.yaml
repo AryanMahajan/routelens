@@ -9,16 +9,31 @@
 # `api_token` = letmein in the {{ }} dialog, then copy this file to
 # tests/fixtures/fastapi/.routelens/flows/ and it appears under Flows.
 #
-#   health ─▶ create user ─▶ fetch it ─▶ if new ─true─▶ delete ─▶ gone?
+#   inputs (runs first)
+#   health ─▶ create user ─▶ fetch it ─▶ if new ─true─▶ delete ─▶ gone? ─▶ summary
 #   list items ─▶ item via /v2
 #
 # `create user` runs against the app's in-memory table, so the second run creates id 5,
-# the third id 6 — the condition and the 404 check stay honest every time.
+# the third id 6 — the condition and the 404 check stay honest every time. Who gets
+# created is the `inputs` block's business: change `new_name` there and every step,
+# assertion and the summary follow.
 
 version: 1
 name: user lifecycle
 description: Create, read, delete and confirm gone — plus an items chain across the two mounts.
 nodes:
+  - id: inputs
+    name: inputs
+    position: { x: 80, y: -60 }
+    type: variables
+    variables:
+      - name: new_name
+        value: Dana
+      - name: new_email
+        value: "{{new_name}}@example.com"
+      - name: seed_count
+        value: "3"
+
   - id: health
     name: health
     position: { x: 80, y: 120 }
@@ -53,7 +68,7 @@ nodes:
         token: "{{secret:api_token}}"
       body:
         type: json
-        content: '{"name": "Dana", "email": "dana@example.com"}'
+        content: '{"name": "{{new_name}}", "email": "{{new_email}}"}'
     extract:
       - name: user_id
         from: body
@@ -64,8 +79,8 @@ nodes:
         expected: "201"
       - from: body
         path: email
-        op: contains
-        expected: "@example.com"
+        op: equals
+        expected: "{{new_email}}"
 
   - id: fetch
     name: fetch it
@@ -89,7 +104,7 @@ nodes:
       - from: body
         path: name
         op: equals
-        expected: Dana
+        expected: "{{new_name}}"
       - from: body
         path: trace_id
         op: equals
@@ -101,7 +116,7 @@ nodes:
     type: condition
     left: "{{user_id}}"
     op: greater_than
-    right: "3"
+    right: "{{seed_count}}"
 
   - id: delete
     name: delete it
@@ -155,6 +170,12 @@ nodes:
       - from: status
         op: less_than
         expected: "400"
+
+  - id: summary
+    name: summary
+    position: { x: 2100, y: 60 }
+    type: display
+    text: "Created {{new_name}} as user {{user_id}} ({{new_email}}), then deleted them again."
 
   - id: items
     name: list items
@@ -213,4 +234,5 @@ edges:
   - { from: is_new, to: delete, handle: "true" }
   - { from: is_new, to: seed_only, handle: "false" }
   - { from: delete, to: gone }
+  - { from: gone, to: summary }
   - { from: items, to: item_v2 }
