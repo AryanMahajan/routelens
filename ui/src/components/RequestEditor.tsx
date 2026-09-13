@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { AuthConfig, BodyValue, RequestDraft } from "../types";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { methodColour } from "./MethodBadge";
-import { VariableInput } from "./VariableInput";
+import { VariableInput, VariableTextarea } from "./VariableInput";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -128,20 +128,19 @@ export function RequestEditor({
                       <span className="w-2/5 shrink-0 truncate px-2 font-mono text-accent">
                         {name}
                       </span>
-                      <input
+                      <VariableInput
                         value={request.path_values[name] ?? ""}
-                        onChange={(e) =>
+                        onChange={(value) =>
                           patch({
                             path_values: {
                               ...request.path_values,
-                              [name]: e.target.value,
+                              [name]: value,
                             },
                           })
                         }
                         placeholder="required"
-                        spellCheck={false}
-                        className="min-w-0 flex-1 rounded border border-edge bg-panel px-2 py-1
-                          font-mono outline-none placeholder:text-method-delete/60 focus:border-accent"
+                        className="rounded border border-edge bg-panel px-2 py-1 font-mono
+                          outline-none placeholder:text-method-delete/60 focus:border-accent"
                       />
                     </label>
                   ))}
@@ -216,12 +215,11 @@ function BodyEditor({
       )}
 
       {(body.type === "json" || body.type === "text") && (
-        <textarea
+        <VariableTextarea
           value={body.content}
-          onChange={(e) => onChange({ ...body, content: e.target.value })}
-          spellCheck={false}
+          onChange={(content) => onChange({ ...body, content })}
           placeholder={body.type === "json" ? '{\n  "name": "Aryan"\n}' : ""}
-          className="min-h-0 flex-1 resize-none rounded border border-edge bg-panel p-3 font-mono
+          className="resize-none rounded border border-edge bg-panel p-3 font-mono
             leading-relaxed outline-none placeholder:text-muted/50 focus:border-accent"
         />
       )}
@@ -264,9 +262,9 @@ function AuthEditor({
 
       {auth.type === "bearer" && (
         <Field label="Token">
-          <input
+          <VariableInput
             value={auth.token}
-            onChange={(e) => onChange({ ...auth, token: e.target.value })}
+            onChange={(token) => onChange({ ...auth, token })}
             placeholder="{{secret:api_token}}"
             spellCheck={false}
             className={inputClass}
@@ -277,17 +275,17 @@ function AuthEditor({
       {auth.type === "basic" && (
         <>
           <Field label="Username">
-            <input
+            <VariableInput
               value={auth.username}
-              onChange={(e) => onChange({ ...auth, username: e.target.value })}
+              onChange={(username) => onChange({ ...auth, username })}
               spellCheck={false}
               className={inputClass}
             />
           </Field>
           <Field label="Password">
-            <input
+            <VariableInput
               value={auth.password}
-              onChange={(e) => onChange({ ...auth, password: e.target.value })}
+              onChange={(password) => onChange({ ...auth, password })}
               placeholder="{{secret:password}}"
               spellCheck={false}
               className={inputClass}
@@ -299,18 +297,18 @@ function AuthEditor({
       {auth.type === "api_key" && (
         <>
           <Field label="Key">
-            <input
+            <VariableInput
               value={auth.key}
-              onChange={(e) => onChange({ ...auth, key: e.target.value })}
+              onChange={(key) => onChange({ ...auth, key })}
               placeholder="X-API-Key"
               spellCheck={false}
               className={inputClass}
             />
           </Field>
           <Field label="Value">
-            <input
+            <VariableInput
               value={auth.value}
-              onChange={(e) => onChange({ ...auth, value: e.target.value })}
+              onChange={(value) => onChange({ ...auth, value })}
               placeholder="{{secret:api_key}}"
               spellCheck={false}
               className={inputClass}
