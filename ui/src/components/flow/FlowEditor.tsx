@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { hasCycle, nodeLabel, updateNode, upstreamVariables, type LiveState } from "../../flow";
+import {
+  hasCycle,
+  nodeLabel,
+  runScope,
+  updateNode,
+  upstreamVariables,
+  type LiveState,
+  type RunScope,
+} from "../../flow";
 import type { Flow, FlowNode, FlowRun, Position } from "../../flowTypes";
 import type { ScanResult } from "../../types";
 import { useVariableNames, VariablesContext } from "../../variables";
@@ -44,13 +52,16 @@ export function FlowEditor({
   /** Add a node after the selected one: a discovered endpoint, a blank request, a condition. */
   onAdd: (pick: Pick) => void;
   onDropEndpoint: (endpoint: string, position: Position) => void;
-  onRun: () => void;
+  onRun: (scope: RunScope) => void;
   onSave: () => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [inspectorWidth, setInspectorWidth] = usePersistedNumber("routelens.inspector.width", INSPECTOR_WIDTH);
   const cyclic = useMemo(() => hasCycle(flow), [flow]);
   const node = selected ? (flow.nodes.find((n) => n.id === selected) ?? null) : null;
+  // With a card selected, Run covers the group wired to it — not the islands elsewhere.
+  const connected = node ? runScope(flow, "connected", node.id) : null;
+  const partial = connected !== null && connected.length < flow.nodes.length;
 
   const labels = useMemo(() => {
     const out: Record<string, string> = {};
@@ -91,12 +102,18 @@ export function FlowEditor({
         </div>
 
         <button
-          onClick={onRun}
+          onClick={() => onRun(node ? "connected" : "all")}
           disabled={running || flow.nodes.length === 0 || cyclic}
-          title={cyclic ? "The flow has a cycle" : "Run (Ctrl+Enter)"}
+          title={
+            cyclic
+              ? "The flow has a cycle"
+              : partial
+                ? `Run the ${connected.length} cards wired to the selected one (Ctrl+Enter). Click empty canvas first to run everything.`
+                : "Run every card (Ctrl+Enter)"
+          }
           className="shrink-0 rounded bg-accent px-4 py-1 font-semibold text-ground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {running ? "Running…" : "▶ Run"}
+          {running ? "Running…" : partial ? `▶ Run connected (${connected.length})` : "▶ Run all"}
         </button>
 
         <button
@@ -162,6 +179,8 @@ export function FlowEditor({
                 culprit={culpritFor(node, live, labels)}
                 onChange={(changes) => onChange((f) => updateNode(f, node.id, changes))}
                 onClose={() => onSelect(null)}
+                onRunStep={running ? null : () => onRun("step")}
+                hasPriorRun={run !== null}
               />
             </WithUpstreamVariables>
           </>

@@ -5,6 +5,8 @@ import {
   applyEvent,
   conditionNode,
   connect,
+  connectedComponent,
+  displayNode,
   duplicateNodes,
   edgeId,
   edgeState,
@@ -15,7 +17,9 @@ import {
   placeNew,
   removeNodes,
   requestNode,
+  runScope,
   upstreamVariables,
+  variablesNode,
   type LiveState,
 } from "./flow";
 import type { Flow, FlowNode, NodeResult } from "./flowTypes";
@@ -38,6 +42,7 @@ function result(node: string, patch: Partial<NodeResult> = {}): NodeResult {
     assertions: [],
     branch: null,
     compared: null,
+    output: null,
     ...patch,
   };
 }
@@ -156,6 +161,45 @@ describe("editing", () => {
     expect([...ancestors(flow, user.id)].sort()).toEqual([login.id, me.id].sort());
     expect(upstreamVariables(flow, user.id)).toEqual(["token", "user_id"]);
     expect(upstreamVariables(flow, login.id)).toEqual([]);
+  });
+});
+
+describe("blocks and scopes", () => {
+  it("labels variables and display blocks by their content", () => {
+    const vars = { ...variablesNode({ x: 0, y: 0 }), type: "variables" as const, variables: [{ name: "who", value: "ann" }, { name: "", value: "" }] };
+    expect(nodeLabel(vars)).toBe("variables: who");
+    expect(nodeLabel(variablesNode({ x: 0, y: 0 }))).toBe("variables");
+    expect(nodeLabel({ ...displayNode({ x: 0, y: 0 }), type: "display", text: "hi {{who}}" })).toBe("display: hi {{who}}");
+  });
+
+  it("an unconnected variables block is in scope for every card; a wired one only downstream", () => {
+    let flow = emptyFlow("f");
+    const a = get("/a");
+    const b = get("/b");
+    flow = addNode(addNode(flow, a), b, { id: a.id });
+    const inputs = { ...variablesNode({ x: 0, y: 0 }), type: "variables" as const, variables: [{ name: "who", value: "ann" }] };
+    flow = addNode(flow, inputs);
+    const mid = { ...variablesNode({ x: 0, y: 0 }), type: "variables" as const, variables: [{ name: "token", value: "t" }] };
+    flow = addNode(flow, mid, { id: a.id });
+    flow = connect(flow, mid.id, b.id, null);
+
+    expect(upstreamVariables(flow, a.id)).toEqual(["who"]);
+    expect(upstreamVariables(flow, b.id)).toEqual(["token", "who"]);
+  });
+
+  it("run scope: all, the wired group plus inputs, or one step plus inputs", () => {
+    let flow = emptyFlow("f");
+    const a = get("/a");
+    const b = get("/b");
+    const island = get("/island");
+    const inputs = variablesNode({ x: 0, y: 0 });
+    flow = addNode(addNode(addNode(addNode(flow, a), b, { id: a.id }), island), inputs);
+
+    expect(runScope(flow, "all", b.id)).toBeNull();
+    expect(runScope(flow, "connected", null)).toBeNull();
+    expect(runScope(flow, "connected", b.id)).toEqual([a.id, b.id, inputs.id]);
+    expect(runScope(flow, "step", b.id)).toEqual([b.id, inputs.id]);
+    expect([...connectedComponent(flow, island.id)]).toEqual([island.id]);
   });
 });
 

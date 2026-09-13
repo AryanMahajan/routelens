@@ -11,8 +11,15 @@
 //! [`Assertion`]s that decide whether the step passed. Both sit *on* the request rather than
 //! being nodes of their own, so a five-call flow is five cards on the canvas, not fifteen.
 //!
-//! A [`NodeKind::Condition`] is the one other kind: it compares two interpolated strings and
-//! sends the run down its `true` or `false` output.
+//! Three other kinds keep a flow self-contained:
+//!
+//! - [`NodeKind::Condition`] compares two interpolated strings and sends the run down its
+//!   `true` or `false` output.
+//! - [`NodeKind::Variables`] declares `name = value` pairs — the flow's own inputs, so
+//!   changing who a test looks up is one edit on the canvas rather than an environment
+//!   change. With nothing wired into it, it runs before everything else.
+//! - [`NodeKind::Display`] resolves a template and shows the text, for putting the result
+//!   a run was after in plain words on the canvas.
 //!
 //! ## Order comes from the edges
 //!
@@ -168,6 +175,15 @@ impl Assertion {
     }
 }
 
+/// One `name = value` pair declared by a [`NodeKind::Variables`] block. The value may
+/// reference other variables.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Variable {
+    pub name: String,
+    #[serde(default)]
+    pub value: String,
+}
+
 /// What a node does.
 // Nearly every node is a request; boxing the common case to slim the rare one would be
 // the wrong trade, and a flow holds a handful of nodes, not millions.
@@ -189,6 +205,16 @@ pub enum NodeKind {
         op: Operator,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         right: String,
+    },
+    /// Declare variables for the steps that follow — the flow's inputs.
+    Variables {
+        #[serde(default)]
+        variables: Vec<Variable>,
+    },
+    /// Resolve a template and show it.
+    Display {
+        #[serde(default)]
+        text: String,
     },
 }
 
@@ -231,6 +257,32 @@ impl Node {
         }
     }
 
+    pub fn variables(pairs: &[(&str, &str)]) -> Self {
+        Node {
+            id: NodeId::new(),
+            name: None,
+            position: Position::default(),
+            kind: NodeKind::Variables {
+                variables: pairs
+                    .iter()
+                    .map(|(name, value)| Variable {
+                        name: name.to_string(),
+                        value: value.to_string(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    pub fn display(text: impl Into<String>) -> Self {
+        Node {
+            id: NodeId::new(),
+            name: None,
+            position: Position::default(),
+            kind: NodeKind::Display { text: text.into() },
+        }
+    }
+
     pub fn at(mut self, x: f64, y: f64) -> Self {
         self.position = Position { x, y };
         self
@@ -243,9 +295,15 @@ impl Node {
     /// The outputs this node has. A request has one, unnamed; a condition has two.
     pub fn handles(&self) -> &'static [&'static str] {
         match self.kind {
-            NodeKind::Request { .. } => &[],
             NodeKind::Condition { .. } => &[HANDLE_TRUE, HANDLE_FALSE],
+            _ => &[],
         }
+    }
+
+    /// A [`NodeKind::Variables`] block with nothing wired into it: the flow's inputs,
+    /// which run before anything else regardless of where they were added.
+    pub fn is_input_block(&self, flow: &Flow) -> bool {
+        matches!(self.kind, NodeKind::Variables { .. }) && flow.upstream(&self.id).next().is_none()
     }
 }
 
@@ -389,8 +447,19 @@ impl Flow {
     /// The order nodes run in: every node after everything it depends on.
     ///
     /// Kahn's algorithm, with ties broken by position in [`Flow::nodes`] so the order is
-    /// stable across runs and independent of where the cards sit on the canvas.
+    /// stable across runs and independent of where the cards sit on the canvas. The one
+    /// exception is deliberate: unconnected [`NodeKind::Variables`] blocks are the flow's
+    /// inputs and go first, so a variable declared on the canvas is there for every step
+    /// whether or not anyone thought to draw an edge from it.
     pub fn execution_order(&self) -> Result<Vec<NodeId>, FlowError> {
+        let order = self.topological_order()?;
+        let (inputs, rest): (Vec<NodeId>, Vec<NodeId>) = order
+            .into_iter()
+            .partition(|id| self.node(id).is_some_and(|n| n.is_input_block(self)));
+        Ok(inputs.into_iter().chain(rest).collect())
+    }
+
+    fn topological_order(&self) -> Result<Vec<NodeId>, FlowError> {
         let index: BTreeMap<&NodeId, usize> = self
             .nodes
             .iter()
@@ -612,6 +681,21 @@ mod tests {
         assert_eq!(json["from"], "header");
         let back: Extraction = serde_json::from_value(json).unwrap();
         assert_eq!(back, e);
+    }
+
+    /// A Variables block added last, with no edges, still runs first: it is the flow's
+    /// input, not a step. One with an edge into it runs where the edge puts it.
+    #[test]
+    fn unconnected_variable_blocks_run_before_everything_else() {
+        let (mut flow, login, me, user) = chain();
+        let inputs = flow.add(Node::variables(&[("who", "ann")]));
+        let mid = flow.add(Node::variables(&[("token", "{{t}}")]));
+        flow.connect(&me, &mid);
+        flow.connect(&mid, &user);
+        assert_eq!(
+            flow.execution_order().unwrap(),
+            vec![inputs, login, me, mid, user]
+        );
     }
 
     #[test]

@@ -54,7 +54,7 @@ pub use error::{CoreError, Result};
 
 use rl_discovery::enrich::{self, AppTarget, Interpreter, Provenance};
 use rl_discovery::{ProjectContext, ScanResult};
-use rl_flow::{Failure, FlowEvent, FlowRun, NodeResult, Outcome};
+use rl_flow::{Failure, FlowEvent, FlowRun, NodeResult, Outcome, RunOptions};
 use rl_http::{Exchange, HttpEngine};
 use rl_import::{Imported, OpenApiImport};
 use rl_model::{Confidence, EndpointSpec, Flow, Origin, RequestDraft, VariableContext};
@@ -567,7 +567,7 @@ impl RouteLens {
     ///
     /// The flow is checked for structural problems here — a cycle, a dangling edge — so a
     /// broken graph is refused before the first request rather than mid-run.
-    pub fn prepare_flow(&self, flow: Flow) -> Result<PreparedFlow> {
+    pub fn prepare_flow(&self, flow: Flow, options: RunOptions) -> Result<PreparedFlow> {
         flow.validate()?;
         let (variables, history) = match self.workspace.as_ref() {
             Some(workspace) => (
@@ -578,6 +578,7 @@ impl RouteLens {
         };
         Ok(PreparedFlow {
             flow,
+            options,
             variables,
             engine: Arc::clone(&self.engine),
             history,
@@ -1005,6 +1006,7 @@ impl RouteLens {
 /// A flow about to run. See [`RouteLens::prepare_flow`].
 pub struct PreparedFlow {
     flow: Flow,
+    options: RunOptions,
     variables: VariableContext,
     engine: Arc<HttpEngine>,
     history: Option<History>,
@@ -1030,6 +1032,7 @@ impl PreparedFlow {
     pub async fn run(mut self, on_event: &mut (dyn FnMut(FlowEvent) + Send)) -> Result<FlowRun> {
         let PreparedFlow {
             flow,
+            options,
             variables,
             engine,
             history,
@@ -1046,7 +1049,14 @@ impl PreparedFlow {
             on_event(event);
         };
 
-        Ok(rl_flow::run(flow, variables, engine.as_ref(), &mut forward).await?)
+        Ok(rl_flow::run_with(
+            flow,
+            options.clone(),
+            variables,
+            engine.as_ref(),
+            &mut forward,
+        )
+        .await?)
     }
 }
 
@@ -1453,7 +1463,10 @@ mod tests {
         )));
         flow.connect(&a, &b);
         flow.connect(&b, &a);
-        assert!(matches!(app.prepare_flow(flow), Err(CoreError::Flow(_))));
+        assert!(matches!(
+            app.prepare_flow(flow, RunOptions::default()),
+            Err(CoreError::Flow(_))
+        ));
     }
 
     /// A one-connection-at-a-time HTTP/1.1 server that plays a tiny API: `POST /login`
@@ -1563,7 +1576,7 @@ connection: close
 
         let mut events = 0;
         let run = app
-            .prepare_flow(flow)
+            .prepare_flow(flow, RunOptions::default())
             .unwrap()
             .run(&mut |_| events += 1)
             .await

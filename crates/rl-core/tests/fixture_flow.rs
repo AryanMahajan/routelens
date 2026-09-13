@@ -63,7 +63,11 @@ fn the_sample_flow_matches_the_fixture_api() {
 
     let run = tokio::runtime::Runtime::new()
         .unwrap()
-        .block_on(app.prepare_flow(flow).unwrap().run(&mut |_| {}))
+        .block_on(
+            app.prepare_flow(flow, rl_flow::RunOptions::default())
+                .unwrap()
+                .run(&mut |_| {}),
+        )
         .unwrap();
     assert!(run.passed(), "{:#?}", run.results);
     // Everything ran except the arm the condition did not take.

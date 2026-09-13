@@ -8,7 +8,7 @@
 //! decisions, the decision belongs in `rl-core` instead.
 
 use rl_core::{EnrichProposal, ProjectScan, RouteLens, SaveAllReport, WorkspaceInfo};
-use rl_flow::{FlowEvent, FlowRun};
+use rl_flow::{FlowEvent, FlowRun, RunOptions};
 use rl_http::Exchange;
 use rl_model::{Flow, RequestDraft};
 use rl_workspace::{Collection, Environment, HistoryEntry, WorkspaceKind};
@@ -216,9 +216,14 @@ async fn rename_flow(state: State<'_, AppState>, from: String, to: String) -> Co
 async fn run_flow(
     state: State<'_, AppState>,
     flow: Flow,
+    options: Option<RunOptions>,
     on_event: Channel<FlowEvent>,
 ) -> CommandResult<FlowRun> {
-    let prepared = state.app.lock().await.prepare_flow(flow)?;
+    let prepared = state
+        .app
+        .lock()
+        .await
+        .prepare_flow(flow, options.unwrap_or_default())?;
     let mut forward = move |event: FlowEvent| {
         // A closed channel means the window went away; the run still completes and returns.
         let _ = on_event.send(event);

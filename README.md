@@ -126,6 +126,10 @@ so nothing is retyped, and every card still knows the file and line that serves 
   the point.
 - **Conditions** send the run down a `true` or `false` output; the other arm is skipped, not
   failed, and both arms can rejoin.
+- **Variables blocks** declare the flow's own inputs on the canvas — `who = ann` once, `{{who}}`
+  everywhere — and **Display blocks** put the result in a sentence: `{{who}} is user {{id}}`.
+- **Run all, run what is wired to the selected card, or re-run one card** with the last
+  run's variables.
 - **Execution follows the edges**, never the layout: a step runs after everything wired into
   it, and only if those passed. When something fails, the failed card turns red with the
   reason, the edges it cut turn red, and every step it took down is dashed and says which

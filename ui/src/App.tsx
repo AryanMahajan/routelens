@@ -5,10 +5,14 @@ import {
   addNode,
   applyEvent,
   conditionNode,
+  displayNode,
   emptyFlow,
   placeNew,
   requestNode,
+  runScope,
+  variablesNode,
   type LiveState,
+  type RunScope,
 } from "./flow";
 import type { Flow, FlowEvent, FlowRun, Position } from "./flowTypes";
 import {
@@ -364,11 +368,22 @@ export default function App() {
       return;
     }
     insertNode(tab.id, (flow, selected) => {
+      // A variables block is the flow's input: it goes above the first card, unconnected,
+      // so it runs before everything. The rest wire after the selected card as usual.
+      if (pick.kind === "variables") {
+        const top = flow.nodes.length
+          ? { x: Math.min(...flow.nodes.map((n) => n.position.x)), y: Math.min(...flow.nodes.map((n) => n.position.y)) - 160 }
+          : { x: 80, y: 120 };
+        const node = variablesNode(top);
+        return { flow: addNode(flow, node), id: node.id };
+      }
       const position = placeNew(flow, selected);
       const node =
         pick.kind === "blank"
           ? requestNode({ ...emptyRequest(), url: "{{base_url}}/" }, position)
-          : conditionNode(position);
+          : pick.kind === "display"
+            ? displayNode(position)
+            : conditionNode(position);
       return { flow: addNode(flow, node, selected ? { id: selected } : null), id: node.id };
     });
   }
@@ -392,8 +407,15 @@ export default function App() {
     }
   }
 
-  async function runFlow(tab: FlowTab) {
+  /**
+   * Run the flow — all of it, the group wired around the selected card, or the selected
+   * card alone. A lone step borrows the last run's variables, so it can be re-run without
+   * the steps before it.
+   */
+  async function runFlow(tab: FlowTab, scope: RunScope) {
     if (tab.running || tab.flow.nodes.length === 0) return;
+    const only = runScope(tab.flow, scope, tab.selected);
+    const seed = scope === "step" ? (tab.run?.variables ?? {}) : {};
     updateFlowTab(tab.id, (t) => ({ ...t, running: true, run: null, live: {}, error: null }));
     const onEvent = (event: FlowEvent) =>
       updateFlowTab(tab.id, (t) => ({
@@ -402,7 +424,7 @@ export default function App() {
         run: event.event === "finished" ? event.run : t.run,
       }));
     try {
-      const run = await api.runFlow(tab.flow, onEvent);
+      const run = await api.runFlow(tab.flow, onEvent, { only, seed });
       updateFlowTab(tab.id, (t) => ({ ...t, run, running: false }));
     } catch (e) {
       updateFlowTab(tab.id, (t) => ({ ...t, running: false, error: describe(e) }));
@@ -421,7 +443,11 @@ export default function App() {
       if (event.key === "Enter" && tab) {
         event.preventDefault();
         if (tab.kind === "request" && !tab.sending && tab.request.url) void send(tab);
-        if (tab.kind === "flow") void runFlow(tab);
+        // Ctrl+Enter follows the toolbar: everything, or what is wired to the selection.
+        // Ctrl+Shift+Enter runs the selected card on its own.
+        if (tab.kind === "flow") {
+          void runFlow(tab, event.shiftKey ? "step" : tab.selected ? "connected" : "all");
+        }
       } else if (event.key.toLowerCase() === "s") {
         event.preventDefault();
         if (!tab || !workspace) return;
@@ -564,7 +590,7 @@ export default function App() {
               onSelect={(id) => updateFlowTab(active.id, (t) => (t.selected === id ? t : { ...t, selected: id }))}
               onAdd={(pick) => addToFlow(active, pick)}
               onDropEndpoint={(endpoint, position) => void addEndpointToFlow(active.id, endpoint, position)}
-              onRun={() => runFlow(active)}
+              onRun={(scope) => runFlow(active, scope)}
               onSave={() => saveFlow(active)}
             />
           )}

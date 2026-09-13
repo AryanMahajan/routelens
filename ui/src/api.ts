@@ -102,7 +102,11 @@ export const api = {
    * whole run once the last node has finished. Rejects only for a flow that cannot run at
    * all — a cycle, a dangling edge — never for a node that failed.
    */
-  runFlow: async (flow: Flow, onEvent: (event: FlowEvent) => void): Promise<FlowRun> => {
+  runFlow: async (
+    flow: Flow,
+    onEvent: (event: FlowEvent) => void,
+    options: { only?: string[] | null; seed?: Record<string, string> } = {},
+  ): Promise<FlowRun> => {
     const channel = new Channel<FlowEvent>();
     channel.onmessage = (event) => {
       if (event.event === "node_finished") {
@@ -113,7 +117,13 @@ export const api = {
         onEvent(event);
       }
     };
-    return normalizeFlowRun(await call<FlowRun>("run_flow", { flow, onEvent: channel }));
+    return normalizeFlowRun(
+      await call<FlowRun>("run_flow", {
+        flow,
+        options: { only: options.only ?? null, seed: options.seed ?? {} },
+        onEvent: channel,
+      }),
+    );
   },
 
   // --- discovery (reads source; never executes it) ---

@@ -50,7 +50,7 @@ pub use draft::{
 };
 pub use flow::{
     Assertion, Edge, Extraction, Flow, FlowError, Node, NodeId, NodeKind, Operator, Position,
-    ValueSource, HANDLE_FALSE, HANDLE_TRUE,
+    ValueSource, Variable, HANDLE_FALSE, HANDLE_TRUE,
 };
 pub use method::HttpMethod;
 pub use path::{ParamStyle, PathSegment, PathTemplate, TypeHint};

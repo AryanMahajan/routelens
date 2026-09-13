@@ -5,7 +5,9 @@ import { MethodBadge } from "../MethodBadge";
 export type Pick =
   | { kind: "endpoint"; endpoint: EndpointSpec }
   | { kind: "blank" }
-  | { kind: "condition" };
+  | { kind: "condition" }
+  | { kind: "variables" }
+  | { kind: "display" };
 
 /**
  * The "+ Add" menu: the project's discovered API first, because that is the point, plus a
@@ -71,12 +73,26 @@ export function EndpointPicker({
         className="m-2 rounded border border-edge bg-ground px-2 py-1.5 outline-none placeholder:text-muted/60 focus:border-accent"
       />
 
-      <div className="flex gap-1 border-b border-edge px-2 pb-2">
+      <div className="flex flex-wrap gap-1 border-b border-edge px-2 pb-2">
         <button onClick={() => onPick({ kind: "blank" })} className={chip}>
           Blank request
         </button>
         <button onClick={() => onPick({ kind: "condition" })} className={chip}>
           <span className="font-mono text-method-patch">IF</span> Condition
+        </button>
+        <button
+          onClick={() => onPick({ kind: "variables" })}
+          className={chip}
+          title="Declare the flow's own variables — change a value here, not in every step"
+        >
+          <span className="font-mono text-accent">{"{{ }}"}</span> Variables
+        </button>
+        <button
+          onClick={() => onPick({ kind: "display" })}
+          className={chip}
+          title="Show a value or sentence built from variables after the run"
+        >
+          <span className="font-mono text-method-put">▤</span> Display
         </button>
       </div>
 

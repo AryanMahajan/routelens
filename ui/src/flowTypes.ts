@@ -67,7 +67,18 @@ export type RequestNodeKind = {
 
 export type ConditionNodeKind = { type: "condition"; left: string; op: Operator; right: string };
 
-export type NodeKind = RequestNodeKind | ConditionNodeKind;
+export interface Variable {
+  name: string;
+  value: string;
+}
+
+/** The flow's own inputs. Unconnected, it runs before everything else. */
+export type VariablesNodeKind = { type: "variables"; variables: Variable[] };
+
+/** A template resolved at run time and shown on the card. */
+export type DisplayNodeKind = { type: "display"; text: string };
+
+export type NodeKind = RequestNodeKind | ConditionNodeKind | VariablesNodeKind | DisplayNodeKind;
 
 export type FlowNode = {
   id: string;
@@ -102,6 +113,8 @@ type WireFlowNode = {
       assert?: ({ op: Operator; expected?: string } & ValueSource)[];
     }
   | { type: "condition"; left: string; op: Operator; right?: string }
+  | { type: "variables"; variables?: { name: string; value?: string }[] }
+  | { type: "display"; text?: string }
 );
 
 export interface WireFlow {
@@ -125,6 +138,16 @@ export function normalizeFlow(wire: WireFlow): Flow {
       };
       if (node.type === "condition") {
         return { ...base, type: "condition", left: node.left, op: node.op, right: node.right ?? "" };
+      }
+      if (node.type === "variables") {
+        return {
+          ...base,
+          type: "variables",
+          variables: (node.variables ?? []).map((v) => ({ name: v.name, value: v.value ?? "" })),
+        };
+      }
+      if (node.type === "display") {
+        return { ...base, type: "display", text: node.text ?? "" };
       }
       return {
         ...base,
@@ -176,6 +199,8 @@ export interface NodeResult {
   /** Which output a condition took. */
   branch: string | null;
   compared: [string, string] | null;
+  /** A display block's template, resolved. */
+  output: string | null;
 }
 
 export interface FlowRun {
@@ -216,6 +241,7 @@ export function normalizeNodeResult(wire: NodeResult): NodeResult {
     })),
     branch: wire.branch ?? null,
     compared: wire.compared ?? null,
+    output: wire.output ?? null,
   };
 }
 

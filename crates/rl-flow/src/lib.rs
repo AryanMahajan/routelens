@@ -31,6 +31,6 @@ pub mod run;
 
 pub use extract::ExtractError;
 pub use run::{
-    run, AssertionResult, Extracted, Failure, FlowEvent, FlowRun, NodeResult, Outcome, Sender,
-    SkipReason, Summary,
+    run, run_with, AssertionResult, Extracted, Failure, FlowEvent, FlowRun, NodeResult, Outcome,
+    RunOptions, Sender, SkipReason, Summary,
 };

@@ -19,6 +19,7 @@ import {
   duplicateNodes,
   edgeId,
   edgeState,
+  isInputBlock,
   moveNodes,
   nodeLabel,
   removeEdges,
@@ -27,12 +28,17 @@ import {
 } from "../../flow";
 import type { Flow, FlowNode, Position as FlowPosition } from "../../flowTypes";
 import type { ScanResult, SourceView } from "../../types";
-import { ConditionNode, RequestNode, type RfNode } from "./nodes";
+import { ConditionNode, DisplayNode, RequestNode, VariablesNode, type RfNode } from "./nodes";
 
 /** The MIME type an endpoint dragged out of the API panel carries. */
 export const ENDPOINT_DRAG_TYPE = "application/x-routelens-endpoint";
 
-const nodeTypes = { request: RequestNode, condition: ConditionNode };
+const nodeTypes = {
+  request: RequestNode,
+  condition: ConditionNode,
+  variables: VariablesNode,
+  display: DisplayNode,
+};
 
 export type FlowUpdate = (flow: Flow) => Flow;
 
@@ -106,6 +112,16 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
         if (node.type === "condition") {
           return { ...common, type: "condition", data: { node, live: state, culprit } };
         }
+        if (node.type === "variables") {
+          return {
+            ...common,
+            type: "variables",
+            data: { node, live: state, culprit, input: isInputBlock(flow, node) },
+          };
+        }
+        if (node.type === "display") {
+          return { ...common, type: "display", data: { node, live: state, culprit } };
+        }
         return {
           ...common,
           type: "request",
@@ -113,7 +129,7 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
         };
       });
     });
-  }, [flow.nodes, live, labels, scan, selected]);
+  }, [flow, live, labels, scan, selected]);
 
   useEffect(() => {
     setEdges((previous) => {

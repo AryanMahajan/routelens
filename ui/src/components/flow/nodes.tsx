@@ -8,8 +8,10 @@ import {
   HANDLE_TRUE,
   operatorLabel,
   type ConditionNodeKind,
+  type DisplayNodeKind,
   type FlowNode,
   type RequestNodeKind,
+  type VariablesNodeKind,
 } from "../../flowTypes";
 import type { SourceView } from "../../types";
 import { MethodBadge } from "../MethodBadge";
@@ -38,9 +40,25 @@ export interface ConditionNodeData extends Record<string, unknown> {
   culprit: string | null;
 }
 
+export interface VariablesNodeData extends Record<string, unknown> {
+  node: FlowNode & VariablesNodeKind;
+  live: NodeLive | null;
+  culprit: string | null;
+  /** Unconnected: runs before everything as the flow's inputs. */
+  input: boolean;
+}
+
+export interface DisplayNodeData extends Record<string, unknown> {
+  node: FlowNode & DisplayNodeKind;
+  live: NodeLive | null;
+  culprit: string | null;
+}
+
 export type RequestRfNode = Node<RequestNodeData, "request">;
 export type ConditionRfNode = Node<ConditionNodeData, "condition">;
-export type RfNode = RequestRfNode | ConditionRfNode;
+export type VariablesRfNode = Node<VariablesNodeData, "variables">;
+export type DisplayRfNode = Node<DisplayNodeData, "display">;
+export type RfNode = RequestRfNode | ConditionRfNode | VariablesRfNode | DisplayRfNode;
 
 function statusClass(live: NodeLive | null): string {
   return `rl-node-${live?.status ?? "idle"}`;
@@ -153,6 +171,74 @@ export function ConditionNode({ data, selected }: NodeProps<ConditionRfNode>) {
         className="rl-handle rl-handle-false"
         style={{ top: "auto", bottom: 6 }}
       />
+    </div>
+  );
+}
+
+/** The flow's inputs: `name = value` rows, with the resolved values once a run has been. */
+export function VariablesNode({ data, selected }: NodeProps<VariablesRfNode>) {
+  const { node, live, culprit, input } = data;
+  const resolved = new Map((live?.result?.extracted ?? []).map((e) => [e.name, e.value]));
+  const rows = node.variables.filter((v) => v.name.trim());
+
+  return (
+    <div className={`rl-node rl-node-variables ${statusClass(live)} ${selected ? "rl-node-selected" : ""}`}>
+      <Handle type="target" position={Position.Left} className="rl-handle" />
+      <div className="flex items-center gap-2 px-3 pt-2">
+        <StatusDot live={live} />
+        <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-accent">{"{{ }}"}</span>
+        <span className="min-w-0 flex-1 truncate">{node.name?.trim() || (input ? "Inputs" : "Variables")}</span>
+        {input && (
+          <span className="shrink-0 text-[10px] text-muted" title="Not wired in, so it runs before everything else">
+            runs first
+          </span>
+        )}
+      </div>
+      <table className="mx-3 mb-1 mt-1 w-[calc(100%-1.5rem)] font-mono text-[11px]">
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td className="py-0.5 text-muted">no variables yet</td>
+            </tr>
+          )}
+          {rows.map((v, i) => (
+            <tr key={i} className="align-top">
+              <td className="whitespace-nowrap py-0.5 pr-2 text-accent">{v.name}</td>
+              <td className="break-all py-0.5 text-muted">
+                {resolved.has(v.name) ? (
+                  <span className="text-ink">{resolved.get(v.name)}</span>
+                ) : (
+                  v.value || <span className="italic">empty</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ResultLine live={live} culprit={culprit} />
+      <Handle type="source" position={Position.Right} className="rl-handle" />
+    </div>
+  );
+}
+
+/** A sentence built from variables. Shows the template until a run fills it in. */
+export function DisplayNode({ data, selected }: NodeProps<DisplayRfNode>) {
+  const { node, live, culprit } = data;
+  const output = live?.result?.output ?? null;
+
+  return (
+    <div className={`rl-node rl-node-display ${statusClass(live)} ${selected ? "rl-node-selected" : ""}`}>
+      <Handle type="target" position={Position.Left} className="rl-handle" />
+      <div className="flex items-center gap-2 px-3 pt-2">
+        <StatusDot live={live} />
+        <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-method-put">▤</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{node.name?.trim() || "Display"}</span>
+      </div>
+      <div className={`whitespace-pre-wrap break-words px-3 pb-1 pt-1 ${output !== null ? "text-[13px] text-ink" : "font-mono text-[11px] text-muted"}`}>
+        {output !== null ? output : node.text.trim() || <span className="italic">Write a sentence with {"{{variables}}"}</span>}
+      </div>
+      <ResultLine live={live} culprit={culprit} />
+      <Handle type="source" position={Position.Right} className="rl-handle" />
     </div>
   );
 }

@@ -31,7 +31,8 @@ Connect cards by dragging from a right-hand handle to a left-hand one. Edges are
 | Delete | select, then `Delete` or `Backspace` |
 | Duplicate | `Ctrl+D` |
 | Select all · none | `Ctrl+A` · `Esc` |
-| Run | `Ctrl+Enter` or **▶ Run** |
+| Run | `Ctrl+Enter` or **▶ Run** — everything, or what is wired to the selected card |
+| Run one card | `Ctrl+Shift+Enter` or **▶ Step** in the inspector |
 | Save | `Ctrl+S` or **Save** |
 
 ## What a card is
@@ -52,6 +53,19 @@ objects and arrays as compact JSON, so a whole record can be re-sent as a body.
 
 A **condition** card compares two interpolated values and sends the run down its `true` or
 `false` output. Whatever hangs off the other output is *skipped*, not failed.
+
+A **variables** block declares `name = value` pairs — the flow's own inputs. Write the user
+you look up once, as `who = ann`, and every step says `{{who}}`; changing the flow to look
+up Dana is one edit on the canvas, not an environment change and not a hunt through the
+steps. A value may use other variables (`greeting = hello {{who}}`), and the block's values
+beat the environment's, while anything a later step extracts beats them in turn. A
+variables block with nothing wired into it **runs before everything else**, wherever it
+sits; wire something into it and it runs in its place, which is how a value can be set
+mid-flow from something extracted.
+
+A **display** block resolves a template — `{{who}} is user {{found_id}}` — and shows the
+sentence on the card once the run reaches it: the result the flow was after, in plain
+words on the canvas rather than buried in a response body. An unknown variable fails it.
 
 ## How a run proceeds
 
@@ -74,6 +88,19 @@ never gets a response. It **passes** otherwise — a 404 with no assertion again
 not a failure, which is what lets `DELETE … → GET … → assert status == 404` work.
 
 Extracted values are committed only when the step passed.
+
+### Running part of a flow
+
+**▶ Run all** with nothing selected runs every card from the roots. Select a card and the
+same button becomes **▶ Run connected (n)**: only the cards wired to the selected one —
+in either direction, however far — run, and the islands elsewhere on the canvas are left
+alone. Both include every input block, so the flow's variables are always in scope.
+
+**▶ Step** in the inspector (or `Ctrl+Shift+Enter`) runs the selected card on its own. The
+steps before it are taken as done, and the variables from the last run stand in for what
+they would have produced — so a step whose assertion you just edited can be re-run in
+isolation without logging in again. With no previous run only the environment and the
+input blocks are in scope.
 
 ## Reading a failure
 
@@ -142,7 +169,6 @@ it for real when `ROUTELENS_FIXTURE_URL` points at the app.
 ## Not yet
 
 - Loops, retries, delays, parallel branches — this is a test, not a workflow engine.
-- Flow-level input variables (use the environment).
 - Assertions with a regular expression.
 - Cancelling a run in progress.
 - Persisting run history as a unit (each request is in history; the run as a whole is not).

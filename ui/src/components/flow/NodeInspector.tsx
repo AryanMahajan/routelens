@@ -13,12 +13,13 @@ import {
   type NodeResult,
   type Operator,
   type ValueSource,
+  type Variable,
 } from "../../flowTypes";
 import type { SourceView } from "../../types";
 import { MethodBadge } from "../MethodBadge";
 import { RequestEditor } from "../RequestEditor";
 import { ResponseViewer } from "../ResponseViewer";
-import { VariableInput } from "../VariableInput";
+import { VariableInput, VariableTextarea } from "../VariableInput";
 
 type Tab = "request" | "extract" | "assert" | "result";
 
@@ -38,6 +39,8 @@ export function NodeInspector({
   culprit,
   onChange,
   onClose,
+  onRunStep,
+  hasPriorRun,
 }: {
   node: FlowNode;
   width: number;
@@ -46,6 +49,9 @@ export function NodeInspector({
   culprit: string | null;
   onChange: (changes: Partial<FlowNode>) => void;
   onClose: () => void;
+  /** Run this card alone, with the last run's variables. Null while a run is going. */
+  onRunStep: (() => void) | null;
+  hasPriorRun: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(live?.result ? "result" : "request");
   const result = live?.result ?? null;
@@ -59,7 +65,10 @@ export function NodeInspector({
           { id: "result", label: "Result" },
         ]
       : [
-          { id: "request", label: "Condition" },
+          {
+            id: "request",
+            label: node.type === "condition" ? "Condition" : node.type === "variables" ? "Variables" : "Display",
+          },
           { id: "result", label: "Result" },
         ];
 
@@ -68,8 +77,12 @@ export function NodeInspector({
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         {node.type === "request" ? (
           <MethodBadge method={node.request.method} className="shrink-0" />
-        ) : (
+        ) : node.type === "condition" ? (
           <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-method-patch">IF</span>
+        ) : node.type === "variables" ? (
+          <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-accent">{"{{ }}"}</span>
+        ) : (
+          <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-method-put">▤</span>
         )}
         <input
           value={node.name ?? ""}
@@ -79,6 +92,18 @@ export function NodeInspector({
             outline-none placeholder:text-muted/70 focus:border-edge focus:bg-ground"
         />
         {source && <RevealButton source={source} />}
+        <button
+          onClick={() => onRunStep?.()}
+          disabled={!onRunStep}
+          title={
+            hasPriorRun
+              ? "Run only this card, with the variables from the last run (Ctrl+Shift+Enter)"
+              : "Run only this card (Ctrl+Shift+Enter). Nothing has run yet, so only environment variables are in scope."
+          }
+          className="shrink-0 rounded bg-raised px-2 py-1 text-[11px] transition hover:brightness-125 disabled:opacity-40"
+        >
+          ▶ Step
+        </button>
         <button
           onClick={onClose}
           title="Hide the inspector (Esc) — select a card to bring it back"
@@ -123,6 +148,12 @@ export function NodeInspector({
         )}
         {tab === "request" && node.type === "condition" && (
           <ConditionEditor node={node} onChange={onChange} />
+        )}
+        {tab === "request" && node.type === "variables" && (
+          <VariablesEditor rows={node.variables} onChange={(variables) => onChange({ variables })} />
+        )}
+        {tab === "request" && node.type === "display" && (
+          <DisplayEditor text={node.text} onChange={(text) => onChange({ text })} />
         )}
         {tab === "extract" && node.type === "request" && (
           <ExtractEditor rows={node.extract} onChange={(extract) => onChange({ extract })} />
@@ -367,6 +398,65 @@ function ConditionEditor({
   );
 }
 
+function VariablesEditor({ rows, onChange }: { rows: Variable[]; onChange: (rows: Variable[]) => void }) {
+  const update = (i: number, row: Variable) => onChange(rows.map((r, j) => (j === i ? row : r)));
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
+      <p className="text-muted">
+        The flow's own inputs. Change a value here and every step that uses{" "}
+        <code className="rounded bg-raised px-1 font-mono text-accent">{"{{name}}"}</code> follows —
+        no environment edit, no touching the steps. A value may use other variables. With
+        nothing wired into this block it runs before everything else.
+      </p>
+      {rows.map((row, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            value={row.name}
+            onChange={(e) => update(i, { ...row, name: e.target.value.replace(/[^\w.-]/g, "") })}
+            placeholder="who"
+            spellCheck={false}
+            className={`${inputClass} w-2/5 flex-none font-mono text-accent`}
+          />
+          <span className="text-muted">=</span>
+          <VariableInput
+            value={row.value}
+            onChange={(value) => update(i, { ...row, value })}
+            placeholder="ann"
+            className={`${inputClass} font-mono`}
+          />
+          <button onClick={() => onChange(rows.filter((_, j) => j !== i))} title="Remove" className={removeClass}>
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange([...rows, { name: "", value: "" }])}
+        className="self-start rounded bg-raised px-3 py-1.5 transition hover:brightness-125"
+      >
+        + Variable
+      </button>
+    </div>
+  );
+}
+
+function DisplayEditor({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+      <p className="shrink-0 text-muted">
+        A sentence built from variables, shown on the card once the run reaches it — a
+        readable summary of what the flow found. Type <code className="rounded bg-raised px-1 font-mono text-accent">{"{{"}</code>{" "}
+        for what is in scope.
+      </p>
+      <VariableTextarea
+        value={text}
+        onChange={onChange}
+        placeholder={"{{who}} is user {{found_id}}"}
+        className="resize-none rounded border border-edge bg-ground p-3 font-mono leading-relaxed outline-none placeholder:text-muted/50 focus:border-accent"
+      />
+    </div>
+  );
+}
+
 // --- result ------------------------------------------------------------------------------
 
 function ResultView({ node, live, culprit }: { node: FlowNode; live: NodeLive | null; culprit: string | null }) {
@@ -388,6 +478,12 @@ function ResultView({ node, live, culprit }: { node: FlowNode; live: NodeLive | 
         </Section>
       )}
 
+      {result.output !== null && (
+        <Section title="Output">
+          <p className="whitespace-pre-wrap break-words text-[13px]">{result.output}</p>
+        </Section>
+      )}
+
       {result.compared && (
         <Section title="Compared">
           <p className="font-mono">
@@ -405,7 +501,7 @@ function ResultView({ node, live, culprit }: { node: FlowNode; live: NodeLive | 
       )}
 
       {result.extracted.length > 0 && (
-        <Section title="Extracted">
+        <Section title={node.type === "variables" ? "Declared" : "Extracted"}>
           <table className="w-full font-mono">
             <tbody>
               {result.extracted.map((e) => (

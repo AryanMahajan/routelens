@@ -31,6 +31,13 @@ export function nodeLabel(node: FlowNode): string {
     const right = node.op === "exists" || node.op === "not_exists" ? "" : ` ${node.right}`;
     return `if ${node.left} ${operatorLabel(node.op)}${right}`.trim();
   }
+  if (node.type === "variables") {
+    const names = node.variables.map((v) => v.name).filter(Boolean);
+    return names.length ? `variables: ${names.join(", ")}` : "variables";
+  }
+  if (node.type === "display") {
+    return node.text.trim() ? `display: ${node.text.trim()}` : "display";
+  }
   return node.request.name?.trim() || `${node.request.method} ${pathOf(node.request.url)}`;
 }
 
@@ -64,6 +71,25 @@ export function conditionNode(position: Position): FlowNode {
     op: "equals",
     right: "",
   };
+}
+
+export function variablesNode(position: Position): FlowNode {
+  return {
+    id: crypto.randomUUID(),
+    name: null,
+    position,
+    type: "variables",
+    variables: [{ name: "", value: "" }],
+  };
+}
+
+export function displayNode(position: Position): FlowNode {
+  return { id: crypto.randomUUID(), name: null, position, type: "display", text: "" };
+}
+
+/** An unconnected variables block: the flow's inputs, which run before everything else. */
+export function isInputBlock(flow: Flow, node: FlowNode): boolean {
+  return node.type === "variables" && !flow.edges.some((e) => e.to === node.id);
 }
 
 /** Roughly how wide a card is, for placing the next one beside it. */
@@ -207,6 +233,36 @@ export function hasCycle(flow: Flow): boolean {
   return flow.nodes.some((n) => visit(n.id));
 }
 
+/** Every node wired to `id`, directly or through others, in either direction. */
+export function connectedComponent(flow: Flow, id: string): Set<string> {
+  const found = new Set<string>([id]);
+  const queue = [id];
+  while (queue.length) {
+    const current = queue.pop()!;
+    for (const e of flow.edges) {
+      const other = e.from === current ? e.to : e.to === current ? e.from : null;
+      if (other && !found.has(other)) {
+        found.add(other);
+        queue.push(other);
+      }
+    }
+  }
+  return found;
+}
+
+export type RunScope = "all" | "connected" | "step";
+
+/**
+ * Which nodes a run covers. `null` means the whole flow. A narrowed run always includes
+ * the input blocks, so the flow's own variables are in scope whatever is being run.
+ */
+export function runScope(flow: Flow, scope: RunScope, selected: string | null): string[] | null {
+  if (scope === "all" || !selected || !flow.nodes.some((n) => n.id === selected)) return null;
+  const ids = scope === "step" ? new Set([selected]) : connectedComponent(flow, selected);
+  for (const node of flow.nodes) if (isInputBlock(flow, node)) ids.add(node.id);
+  return flow.nodes.filter((n) => ids.has(n.id)).map((n) => n.id);
+}
+
 /** Every node upstream of `id`, however far. */
 export function ancestors(flow: Flow, id: string): Set<string> {
   const found = new Set<string>();
@@ -223,13 +279,18 @@ export function ancestors(flow: Flow, id: string): Set<string> {
   return found;
 }
 
-/** The variable names a node can rely on: everything its ancestors extract. */
+/**
+ * The variable names a node can rely on: everything its ancestors extract or declare, plus
+ * every input block — those run first whatever the edges say.
+ */
 export function upstreamVariables(flow: Flow, id: string): string[] {
   const names = new Set<string>();
-  for (const up of ancestors(flow, id)) {
-    const node = flow.nodes.find((n) => n.id === up);
+  const declare = (node: FlowNode | undefined) => {
     if (node?.type === "request") for (const e of node.extract) if (e.name) names.add(e.name);
-  }
+    if (node?.type === "variables") for (const v of node.variables) if (v.name) names.add(v.name);
+  };
+  for (const up of ancestors(flow, id)) declare(flow.nodes.find((n) => n.id === up));
+  for (const node of flow.nodes) if (node.id !== id && isInputBlock(flow, node)) declare(node);
   return [...names].sort();
 }
 

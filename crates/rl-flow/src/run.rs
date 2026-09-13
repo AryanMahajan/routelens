@@ -16,6 +16,15 @@
 //! they take precedence over environment variables of the same name, and are committed only
 //! when the node passed.
 //!
+//! A variables block declares values the same way a request extracts them: resolved against
+//! what is in scope when it runs, committed on pass, later declarations winning. A display
+//! block resolves its template and keeps the text in [`NodeResult::output`].
+//!
+//! A run can be narrowed with [`RunOptions::only`] — one step, or the group of steps wired
+//! together around a selection. Edges from steps outside the run count as satisfied, and
+//! [`RunOptions::seed`] supplies the variables those steps would have produced (a previous
+//! run's, typically), so a single step can be re-run on its own.
+//!
 //! The runner never touches the network itself: it sends through a [`Sender`], which is
 //! [`rl_http::HttpEngine`] in the application and a scripted fake in tests.
 
@@ -155,6 +164,9 @@ pub struct NodeResult {
     /// A condition's two sides as compared, for the card to show.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compared: Option<(String, String)>,
+    /// A display block's template, resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 impl NodeResult {
@@ -169,6 +181,7 @@ impl NodeResult {
             assertions: Vec::new(),
             branch: None,
             compared: None,
+            output: None,
         }
     }
 }
@@ -214,6 +227,20 @@ pub enum FlowEvent {
     Finished { run: Box<FlowRun> },
 }
 
+/// How much of a flow to run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunOptions {
+    /// Run only these nodes. `None` runs the whole flow. Nodes named here that the flow
+    /// does not have are ignored.
+    #[serde(default)]
+    pub only: Option<Vec<NodeId>>,
+    /// Variables in scope before the first node — a previous run's, so one step can be run
+    /// alone with what the steps before it produced. Anything the run declares or extracts
+    /// takes precedence.
+    #[serde(default)]
+    pub seed: BTreeMap<String, String>,
+}
+
 /// Run `flow` against `base` variables, sending through `sender`.
 ///
 /// Fails only for a flow that cannot be run at all — a cycle, a dangling edge. Everything
@@ -224,8 +251,23 @@ pub async fn run<S: Sender>(
     sender: &S,
     on_event: &mut (dyn FnMut(FlowEvent) + Send),
 ) -> Result<FlowRun, FlowError> {
+    run_with(flow, RunOptions::default(), base, sender, on_event).await
+}
+
+/// [`run`], narrowed by [`RunOptions`].
+pub async fn run_with<S: Sender>(
+    flow: &Flow,
+    options: RunOptions,
+    base: &VariableContext,
+    sender: &S,
+    on_event: &mut (dyn FnMut(FlowEvent) + Send),
+) -> Result<FlowRun, FlowError> {
     flow.validate()?;
-    let order = flow.execution_order()?;
+    let mut order = flow.execution_order()?;
+    if let Some(only) = &options.only {
+        order.retain(|id| only.contains(id));
+    }
+    let included: std::collections::BTreeSet<&NodeId> = order.iter().collect();
     on_event(FlowEvent::Started {
         order: order.clone(),
     });
@@ -236,7 +278,7 @@ pub async fn run<S: Sender>(
         .unwrap_or_default();
     let clock = Instant::now();
 
-    let mut variables: BTreeMap<String, String> = BTreeMap::new();
+    let mut variables: BTreeMap<String, String> = options.seed.clone();
     let mut results: Vec<NodeResult> = Vec::with_capacity(order.len());
     let mut summary = Summary::default();
 
@@ -245,7 +287,7 @@ pub async fn run<S: Sender>(
             .node(id)
             .expect("execution order names only known nodes");
 
-        let result = match gate(flow, node, &results) {
+        let result = match gate(flow, node, &results, &included) {
             Gate::Skip(reason) => NodeResult::skipped(id, reason),
             Gate::Run => {
                 on_event(FlowEvent::NodeStarted { node: id.clone() });
@@ -292,13 +334,24 @@ enum Gate {
 }
 
 /// Look at every edge into `node` and decide whether it runs. See the module docs.
-fn gate(flow: &Flow, node: &Node, finished: &[NodeResult]) -> Gate {
+fn gate(
+    flow: &Flow,
+    node: &Node,
+    finished: &[NodeResult],
+    included: &std::collections::BTreeSet<&NodeId>,
+) -> Gate {
     let mut any_live = false;
     let mut first_inactive: Option<SkipReason> = None;
     let mut edges = 0;
 
     for edge in flow.upstream(&node.id) {
         edges += 1;
+        // A step outside this run is taken as done and passed: the point of a partial run
+        // is to skip it, not to be blocked by it.
+        if !included.contains(&edge.from) {
+            any_live = true;
+            continue;
+        }
         let Some(upstream) = finished.iter().find(|r| r.node == edge.from) else {
             // Cannot happen after validation: the order guarantees `from` finished first.
             continue;
@@ -353,6 +406,7 @@ async fn execute<S: Sender>(node: &Node, ctx: &VariableContext, sender: &S) -> N
         assertions: Vec::new(),
         branch: None,
         compared: None,
+        output: None,
     };
 
     match &node.kind {
@@ -365,6 +419,18 @@ async fn execute<S: Sender>(node: &Node, ctx: &VariableContext, sender: &S) -> N
         }
         NodeKind::Condition { left, op, right } => {
             result.outcome = run_condition(left, *op, right, ctx, &mut result);
+        }
+        NodeKind::Variables { variables } => {
+            result.outcome = run_variables(variables, ctx, &mut result);
+        }
+        NodeKind::Display { text } => {
+            result.outcome = match resolve_all(text, ctx) {
+                Ok(output) => {
+                    result.output = Some(output);
+                    Outcome::Passed
+                }
+                Err(failure) => Outcome::Failed { failure },
+            };
         }
     }
 
@@ -537,6 +603,50 @@ fn run_condition(
     result.branch = Some(taken.to_string());
     result.compared = Some((left, right));
     Outcome::Passed
+}
+
+/// Declare variables: each value is resolved against what is in scope — the environment,
+/// everything extracted so far, and the pairs above it in the same block — so a value can
+/// build on another. Declared as [`NodeResult::extracted`], because that is what they are.
+fn run_variables(
+    variables: &[rl_model::Variable],
+    ctx: &VariableContext,
+    result: &mut NodeResult,
+) -> Outcome {
+    let mut scope = ctx.clone();
+    for variable in variables {
+        let name = variable.name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        match resolve_all(&variable.value, &scope) {
+            Ok(value) => {
+                scope.set_local(name, value.clone());
+                result.extracted.push(Extracted {
+                    name: name.to_string(),
+                    value,
+                });
+            }
+            Err(failure) => return Outcome::Failed { failure },
+        }
+    }
+    Outcome::Passed
+}
+
+/// Resolve a template, reporting every undefined name at once rather than the first.
+fn resolve_all(text: &str, ctx: &VariableContext) -> Result<String, Failure> {
+    let undefined: Vec<String> = VariableContext::references(text)
+        .into_iter()
+        .filter(|name| !ctx.is_defined(name))
+        .collect();
+    if !undefined.is_empty() {
+        return Err(Failure::UndefinedVariables { names: undefined });
+    }
+    ctx.resolve(text)
+        .map(|r| r.value)
+        .map_err(|e| Failure::Resolve {
+            message: e.to_string(),
+        })
 }
 
 /// A value source, as a person would name it in a message.
@@ -1064,6 +1174,106 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, FlowError::Cycle(_)));
         assert!(!any, "nothing ran");
+    }
+
+    /// The flow's own inputs: a Variables block with no edges runs first, its values beat
+    /// the environment, an extraction later beats it, and a Display block shows the lot.
+    #[tokio::test]
+    async fn variable_blocks_are_inputs_and_display_blocks_show_the_result() {
+        let api = Fake::new(|r| {
+            assert!(
+                r.url_with_path_values().ends_with("/users?search=dana"),
+                "{}",
+                r.url
+            );
+            reply(200, r#"[{"id":7,"name":"Dana"}]"#)
+        });
+        let mut ctx = env();
+        ctx.environment.insert("who".into(), "from-env".into());
+
+        let mut flow = Flow::new("inputs");
+        let mut search = RequestDraft::new(HttpMethod::Get, "{{base_url}}/users?search={{who}}");
+        search.name = Some("search".into());
+        let search = flow.add(extracting(Node::request(search), "found_id", "[0].id"));
+        let show = flow.add(Node::display(
+            "{{who}} is user {{found_id}} via {{greeting}}",
+        ));
+        flow.connect(&search, &show);
+        // Added last, unconnected: still the first thing to run.
+        let inputs = flow.add(Node::variables(&[
+            ("who", "dana"),
+            ("greeting", "hello {{who}}"),
+        ]));
+
+        let run = run_quietly(&flow, &ctx, &api).await;
+        assert!(run.passed(), "{:#?}", run.results);
+        assert_eq!(run.results[0].node, inputs, "inputs went first");
+        assert_eq!(run.results[0].extracted.len(), 2);
+        assert_eq!(
+            run.variables["who"], "dana",
+            "the block beats the environment"
+        );
+        assert_eq!(
+            run.variables["greeting"], "hello dana",
+            "a value can use an earlier one"
+        );
+        assert_eq!(
+            run.result(&show).unwrap().output.as_deref(),
+            Some("dana is user 7 via hello dana")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_display_block_with_an_unknown_variable_fails_and_names_it() {
+        let api = Fake::new(|_| reply(200, "{}"));
+        let mut flow = Flow::new("display");
+        let show = flow.add(Node::display("user {{nobody}}"));
+        let run = run_quietly(&flow, &env(), &api).await;
+        assert_eq!(
+            outcome_of(&run, &show),
+            &Outcome::Failed {
+                failure: Failure::UndefinedVariables {
+                    names: vec!["nobody".into()]
+                }
+            }
+        );
+    }
+
+    /// Run one step alone: its upstream is taken as done, the seed stands in for what it
+    /// would have produced, and nothing else runs.
+    #[tokio::test]
+    async fn a_partial_run_treats_outside_steps_as_passed_and_uses_the_seed() {
+        let api = Fake::new(|r| {
+            assert!(r.url_with_path_values().ends_with("/users/42"), "{}", r.url);
+            reply(200, r#"{"id":42}"#)
+        });
+        let mut flow = Flow::new("partial");
+        let login = flow.add(extracting(get("{{base_url}}/login"), "user_id", "id"));
+        let user = flow.add(get("{{base_url}}/users/{{user_id}}"));
+        let after = flow.add(get("{{base_url}}/after"));
+        flow.connect(&login, &user);
+        flow.connect(&user, &after);
+
+        let options = RunOptions {
+            only: Some(vec![user.clone()]),
+            seed: BTreeMap::from([("user_id".to_string(), "42".to_string())]),
+        };
+        let mut order = Vec::new();
+        let run = run_with(&flow, options, &env(), &api, &mut |e| {
+            if let FlowEvent::Started { order: o } = e {
+                order = o;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(order, vec![user.clone()]);
+        assert_eq!(run.results.len(), 1);
+        assert!(outcome_of(&run, &user).is_passed());
+        assert_eq!(api.urls().len(), 1, "only the chosen step was sent");
+        assert_eq!(
+            run.variables["user_id"], "42",
+            "the seed is part of the run's variables"
+        );
     }
 
     #[test]
