@@ -2,8 +2,8 @@
 
 What belongs to a *project* lands in its `.routelens/` directory, split into three tiers by
 how the data should be treated: shared, private, and disposable. What belongs to *you* —
-saved requests — lives in your user data directory and is the same whichever project is
-open.
+saved requests and request history — lives in your user data directory and is the same
+whichever project is open.
 
 ```
 .routelens/                   # in the project
@@ -16,19 +16,20 @@ open.
 ├── .gitignore                # committed — ignores local/
 └── local/                    # never committed
     ├── secrets.json          # secret values (or an OS keychain reference)
-    ├── history.sqlite        # request history
     ├── routelens_enrich.py   # the runtime-enrich helper, rewritten before each run
     └── index.sqlite          # source index cache — disposable, rebuildable
 
 <user data dir>/routelens/    # per user, every project
-└── collections/
-    └── users.yaml            # saved requests
+├── collections/
+│   └── users.yaml            # saved requests
+└── history.sqlite            # request history — private, redacted
 ```
 
 The user data directory is `%LOCALAPPDATA%\routelens` on Windows,
 `~/.local/share/routelens` on Linux and `~/Library/Application Support/routelens` on macOS;
-`ROUTELENS_HOME` overrides it. A workspace from before collections were per-user has its
-`.routelens/collections/` moved there the first time it is opened.
+`ROUTELENS_HOME` overrides it. A workspace from before collections and history were
+per-user has its `.routelens/collections/` and `.routelens/local/history.sqlite` moved there
+the first time it is opened (the history only if no per-user database exists yet).
 
 RouteLens writes `.routelens/.gitignore` automatically on workspace creation, so the private
 tier is excluded from the moment it exists rather than after someone notices.

@@ -167,6 +167,7 @@ impl Workspace {
         ensure_project_gitignore(&layout)?;
 
         migrate_collections(&layout)?;
+        migrate_history(&layout)?;
 
         Ok(Workspace { layout, manifest })
     }
@@ -309,7 +310,8 @@ impl Workspace {
 
     // --- history ------------------------------------------------------------------------
 
-    /// Open this workspace's request history, creating the database if needed.
+    /// Open the request history — per user, shared by every project — creating the
+    /// database if needed.
     pub fn history(&self) -> Result<crate::history::History> {
         crate::history::History::open(self.layout.history_db())
     }
@@ -429,6 +431,34 @@ fn list_names(dir: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// Move a history database left under the project's `.routelens/local/` — where it lived
+/// before history became per-user — into the user's data directory.
+///
+/// Only when there is no per-user database yet: two SQLite files cannot simply be merged,
+/// and the newer one is the one being written to. A project database that stays behind
+/// is in `local/`, which is ignored, and harmless.
+fn migrate_history(layout: &Layout) -> Result<()> {
+    let legacy = layout.legacy_history_db();
+    let current = layout.history_db();
+    if !legacy.is_file() || current.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = current.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| WorkspaceError::io(format!("creating {}", parent.display()), e))?;
+    }
+    // A rename across drives fails; copy-then-remove covers both.
+    match std::fs::rename(&legacy, &current) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            std::fs::copy(&legacy, &current)
+                .map_err(|e| WorkspaceError::io(format!("copying {}", legacy.display()), e))?;
+            let _ = std::fs::remove_file(&legacy);
+            Ok(())
+        }
+    }
+}
+
 /// Move collections saved under the project's `.routelens/collections/` — where they lived
 /// before becoming per-user — into the user's data directory.
 ///
@@ -539,6 +569,53 @@ mod tests {
         assert!(
             !old.join(".routelens/collections").exists(),
             "moved, not copied"
+        );
+    }
+
+    /// History follows the user: what was sent from one project is listed in another, and
+    /// a database left behind by an older RouteLens is picked up on open.
+    #[test]
+    fn history_is_shared_across_projects_and_migrated_from_older_workspaces() {
+        use crate::history::{History, NewEntry};
+        use rl_model::VariableContext;
+
+        let home = TempDir::new().unwrap();
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        let layout_a = Layout::with_data_dir(a.path(), home.path());
+        let layout_b = Layout::with_data_dir(b.path(), home.path());
+
+        let ws_a = Workspace::create_in(layout_a, "a", WorkspaceKind::Project).unwrap();
+        ws_a.history()
+            .unwrap()
+            .record(&NewEntry::new("GET", "http://a.test/").redacted(&VariableContext::new()))
+            .unwrap();
+
+        let ws_b = Workspace::create_in(layout_b, "b", WorkspaceKind::Project).unwrap();
+        let seen = ws_b.history().unwrap().recent(10).unwrap();
+        assert_eq!(seen.len(), 1, "project b sees what project a sent");
+        assert_eq!(seen[0].url, "http://a.test/");
+
+        // An older workspace with history under local/, and no per-user database yet.
+        let old_home = TempDir::new().unwrap();
+        let c = TempDir::new().unwrap();
+        let layout_c = Layout::with_data_dir(c.path(), old_home.path());
+        Workspace::create_in(layout_c.clone(), "c", WorkspaceKind::Project).unwrap();
+        History::open(layout_c.legacy_history_db())
+            .unwrap()
+            .record(&NewEntry::new("POST", "http://old.test/").redacted(&VariableContext::new()))
+            .unwrap();
+        assert!(!layout_c.history_db().exists());
+
+        let reopened = Workspace::open_in(layout_c.clone()).unwrap();
+        assert!(
+            layout_c.history_db().is_file(),
+            "moved to the user's data directory"
+        );
+        assert!(!layout_c.legacy_history_db().exists());
+        assert_eq!(
+            reopened.history().unwrap().recent(10).unwrap()[0].url,
+            "http://old.test/"
         );
     }
 

@@ -126,6 +126,15 @@ edges:
 Secret values never appear: a request references `{{secret:name}}` and the value is
 substituted moments before sending, as everywhere else in RouteLens.
 
+## A worked example
+
+[`docs/examples/fastapi-user-lifecycle.yaml`](examples/fastapi-user-lifecycle.yaml) is a
+flow for the FastAPI fixture in `tests/fixtures/fastapi`: health → create a user → fetch it
+→ *if it is a new row* → delete → confirm 404, plus an items chain across the `/v1` and
+`/v2` mounts. The header of the file says how to run the fixture and where to copy the
+flow; `cargo test -p rl-core --test fixture_flow` keeps it in step with the scan, and runs
+it for real when `ROUTELENS_FIXTURE_URL` points at the app.
+
 ## Not yet
 
 - Loops, retries, delays, parallel branches — this is a test, not a workflow engine.

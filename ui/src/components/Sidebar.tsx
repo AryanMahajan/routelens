@@ -33,6 +33,9 @@ export function Sidebar({
   addingToFlow,
   onOpenFlow,
   onNewFlow,
+  width,
+  collapsed,
+  onCollapse,
 }: {
   workspace: WorkspaceInfo | null;
   onOpenRequest: (request: RequestDraft, collection: string) => void;
@@ -52,6 +55,9 @@ export function Sidebar({
   addingToFlow: boolean;
   onOpenFlow: (name: string) => void;
   onNewFlow: () => void;
+  width: number;
+  collapsed: boolean;
+  onCollapse: (collapsed: boolean) => void;
 }) {
   // The API tree is the reason RouteLens exists, so it opens first for a project workspace.
   const [panel, setPanel] = useState<Panel>("api");
@@ -116,23 +122,65 @@ export function Sidebar({
     };
   }, [workspace, refreshKey]);
 
+  if (collapsed) {
+    // A thin rail: enough to get the sidebar back and to switch the theme.
+    return (
+      <aside className="flex w-9 shrink-0 flex-col items-center border-r border-edge bg-panel py-2">
+        <button
+          onClick={() => onCollapse(false)}
+          title="Show the sidebar (Ctrl+B)"
+          className="rounded px-1.5 py-1 text-muted transition hover:bg-raised hover:text-ink"
+        >
+          »
+        </button>
+        {workspace && (
+          <span
+            className="mt-3 rotate-180 text-[11px] font-semibold text-muted [writing-mode:vertical-rl]"
+            title={workspace.root}
+          >
+            {workspace.name}
+          </span>
+        )}
+        <button
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          className="mt-auto rounded px-1.5 py-1 text-muted transition hover:bg-raised hover:text-ink"
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-edge bg-panel">
+    <aside
+      className="flex shrink-0 flex-col border-r border-edge bg-panel"
+      style={{ width }}
+    >
       {/* Workspace header */}
       <div className="border-b border-edge p-3">
         {workspace ? (
           <>
             <div className="flex items-baseline justify-between gap-2">
-              <h1 className="truncate font-semibold" title={workspace.root}>
+              <h1 className="min-w-0 truncate font-semibold" title={workspace.root}>
                 {workspace.name}
               </h1>
-              <button
-                onClick={onOpenWorkspace}
-                className="shrink-0 text-muted transition hover:text-ink"
-                title="Open another workspace"
-              >
-                Open…
-              </button>
+              <span className="flex shrink-0 items-baseline gap-2">
+                <button
+                  onClick={onOpenWorkspace}
+                  className="text-muted transition hover:text-ink"
+                  title="Open another workspace"
+                >
+                  Open…
+                </button>
+                <button
+                  onClick={() => onCollapse(true)}
+                  className="text-muted transition hover:text-ink"
+                  title="Hide the sidebar (Ctrl+B)"
+                >
+                  «
+                </button>
+              </span>
             </div>
 
             <div className="mt-2 flex gap-1">
@@ -168,12 +216,21 @@ export function Sidebar({
             )}
           </>
         ) : (
-          <button
-            onClick={onOpenWorkspace}
-            className="w-full rounded bg-accent px-3 py-2 font-semibold text-ground transition hover:brightness-110"
-          >
-            Open a project
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onOpenWorkspace}
+              className="min-w-0 flex-1 rounded bg-accent px-3 py-2 font-semibold text-ground transition hover:brightness-110"
+            >
+              Open a project
+            </button>
+            <button
+              onClick={() => onCollapse(true)}
+              className="shrink-0 text-muted transition hover:text-ink"
+              title="Hide the sidebar (Ctrl+B)"
+            >
+              «
+            </button>
+          </div>
         )}
       </div>
 

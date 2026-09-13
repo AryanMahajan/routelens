@@ -12,8 +12,11 @@
 //! ├── .gitignore           committed — written automatically, ignores local/
 //! └── local/               never committed
 //!     ├── secrets.json     private   — or an OS keychain reference
-//!     ├── history.sqlite   private
 //!     └── index.sqlite     disposable — rebuildable source index cache
+//!
+//! <user data dir>/routelens/   per user, every project
+//! ├── collections/*.yaml   saved requests
+//! └── history.sqlite       private — what was sent, across every project
 //! ```
 //!
 //! ## Why three tiers and not two

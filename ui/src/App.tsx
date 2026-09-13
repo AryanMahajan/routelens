@@ -26,9 +26,12 @@ import { FlowEditor } from "./components/flow/FlowEditor";
 import type { Pick } from "./components/flow/EndpointPicker";
 import { ImportDialog } from "./components/ImportDialog";
 import { RequestEditor } from "./components/RequestEditor";
+import { ResizeHandle, usePersistedFlag, usePersistedNumber } from "./components/ResizeHandle";
 import { ResponseViewer } from "./components/ResponseViewer";
 import { Sidebar } from "./components/Sidebar";
 import { TabStrip } from "./components/TabStrip";
+
+const SIDEBAR_WIDTH = 288;
 
 /** One open request. Everything a tab shows lives here, so switching tabs loses nothing. */
 interface RequestTab {
@@ -110,6 +113,10 @@ export default function App() {
   const [variableNames, setVariableNames] = useState<string[]>([]);
   // Bumped to make the sidebar reload after something writes to the workspace.
   const [refreshKey, setRefreshKey] = useState(0);
+  // The sidebar's size is a per-machine preference: a wide screen wants more of the API
+  // tree, a laptop wants the canvas.
+  const [sidebarWidth, setSidebarWidth] = usePersistedNumber("routelens.sidebar.width", SIDEBAR_WIDTH);
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistedFlag("routelens.sidebar.collapsed", false);
 
   // Anything that wrote to the workspace: reload the collection/environment names as
   // well as the panels, or a collection created just now is never listed.
@@ -426,6 +433,9 @@ export default function App() {
       } else if (event.key.toLowerCase() === "w" && tab) {
         event.preventDefault();
         closeTab(tab.id);
+      } else if (event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setSidebarCollapsed(!sidebarCollapsed);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -452,7 +462,20 @@ export default function App() {
           onNewFlow={newFlow}
           onChanged={refresh}
           onOpenRequest={(saved, collection) => openTab(saved, (t) => t.request.id === saved.id, collection)}
+          width={sidebarWidth}
+          collapsed={sidebarCollapsed}
+          onCollapse={setSidebarCollapsed}
         />
+        {!sidebarCollapsed && (
+          <ResizeHandle
+            width={sidebarWidth}
+            min={200}
+            max={640}
+            grows="right"
+            onChange={setSidebarWidth}
+            onReset={() => setSidebarWidth(SIDEBAR_WIDTH)}
+          />
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col">
           <TabStrip

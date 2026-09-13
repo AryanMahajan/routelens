@@ -32,6 +32,7 @@ type Tab = "request" | "extract" | "assert" | "result";
  */
 export function NodeInspector({
   node,
+  width,
   live,
   source,
   culprit,
@@ -39,6 +40,7 @@ export function NodeInspector({
   onClose,
 }: {
   node: FlowNode;
+  width: number;
   live: NodeLive | null;
   source: SourceView | null;
   culprit: string | null;
@@ -62,7 +64,7 @@ export function NodeInspector({
         ];
 
   return (
-    <aside className="flex w-[440px] shrink-0 flex-col border-l border-edge bg-panel">
+    <aside className="flex shrink-0 flex-col border-l border-edge bg-panel" style={{ width }}>
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         {node.type === "request" ? (
           <MethodBadge method={node.request.method} className="shrink-0" />
@@ -79,10 +81,10 @@ export function NodeInspector({
         {source && <RevealButton source={source} />}
         <button
           onClick={onClose}
-          title="Close (Esc)"
+          title="Hide the inspector (Esc) — select a card to bring it back"
           className="shrink-0 rounded px-1.5 text-muted transition hover:bg-raised hover:text-ink"
         >
-          ✕
+          »
         </button>
       </div>
 

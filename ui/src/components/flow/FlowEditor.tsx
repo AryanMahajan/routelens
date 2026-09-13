@@ -3,9 +3,12 @@ import { hasCycle, nodeLabel, updateNode, upstreamVariables, type LiveState } fr
 import type { Flow, FlowNode, FlowRun, Position } from "../../flowTypes";
 import type { ScanResult } from "../../types";
 import { useVariableNames, VariablesContext } from "../../variables";
+import { ResizeHandle, usePersistedNumber } from "../ResizeHandle";
 import { EndpointPicker, type Pick } from "./EndpointPicker";
 import { FlowCanvas, sourceFor, type FlowUpdate } from "./FlowCanvas";
 import { NodeInspector } from "./NodeInspector";
+
+const INSPECTOR_WIDTH = 440;
 
 /**
  * A flow tab: toolbar, canvas, and the inspector for whichever card is selected.
@@ -45,6 +48,7 @@ export function FlowEditor({
   onSave: () => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [inspectorWidth, setInspectorWidth] = usePersistedNumber("routelens.inspector.width", INSPECTOR_WIDTH);
   const cyclic = useMemo(() => hasCycle(flow), [flow]);
   const node = selected ? (flow.nodes.find((n) => n.id === selected) ?? null) : null;
 
@@ -139,17 +143,28 @@ export function FlowEditor({
           onDropEndpoint={onDropEndpoint}
         />
         {node && (
-          <WithUpstreamVariables flow={flow} node={node}>
-            <NodeInspector
-              key={node.id}
-              node={node}
-              live={live[node.id] ?? null}
-              source={sourceFor(node, scan)}
-              culprit={culpritFor(node, live, labels)}
-              onChange={(changes) => onChange((f) => updateNode(f, node.id, changes))}
-              onClose={() => onSelect(null)}
+          <>
+            <ResizeHandle
+              width={inspectorWidth}
+              min={320}
+              max={900}
+              grows="left"
+              onChange={setInspectorWidth}
+              onReset={() => setInspectorWidth(INSPECTOR_WIDTH)}
             />
-          </WithUpstreamVariables>
+            <WithUpstreamVariables flow={flow} node={node}>
+              <NodeInspector
+                key={node.id}
+                node={node}
+                width={inspectorWidth}
+                live={live[node.id] ?? null}
+                source={sourceFor(node, scan)}
+                culprit={culpritFor(node, live, labels)}
+                onChange={(changes) => onChange((f) => updateNode(f, node.id, changes))}
+                onClose={() => onSelect(null)}
+              />
+            </WithUpstreamVariables>
+          </>
         )}
       </div>
     </div>

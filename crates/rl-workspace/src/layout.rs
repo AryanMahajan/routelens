@@ -3,9 +3,10 @@
 //! One type owns every path RouteLens writes, so the tier split is enforced in a single
 //! place rather than by convention scattered across the crate.
 //!
-//! Collections are the exception to "everything under `.routelens/`": they are *per user*,
-//! not per project — the same saved requests appear whichever project is open — and live
-//! in the user's data directory. Environments, secrets and history stay with the project.
+//! Collections and history are the exceptions to "everything under `.routelens/`": they are
+//! *per user*, not per project — the same saved requests and the same "what did I send"
+//! log follow you whichever project is open — and live in the user's data directory.
+//! Environments, flows and secrets stay with the project.
 
 use crate::error::{Result, WorkspaceError};
 use std::path::{Path, PathBuf};
@@ -153,8 +154,14 @@ impl Layout {
         self.local_dir().join(SECRETS_FILE)
     }
 
-    /// Private tier: history rows may quote request and response bodies.
+    /// Private tier: history rows may quote request and response bodies. Per user, like
+    /// collections — one log across every project.
     pub fn history_db(&self) -> PathBuf {
+        self.data_dir.join(HISTORY_DB)
+    }
+
+    /// Where history lived before it became per-user; read only to migrate.
+    pub fn legacy_history_db(&self) -> PathBuf {
         self.local_dir().join(HISTORY_DB)
     }
 
@@ -226,9 +233,19 @@ mod tests {
     }
 
     #[test]
+    fn history_is_per_user_not_per_project() {
+        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelens");
+        assert!(l.history_db().ends_with("routelens/history.sqlite"));
+        assert!(!l.history_db().starts_with("/projects"));
+        assert!(l
+            .legacy_history_db()
+            .ends_with(".routelens/local/history.sqlite"));
+    }
+
+    #[test]
     fn private_and_disposable_tiers_sit_under_local() {
         let l = layout();
-        for path in [l.secrets_file(), l.history_db(), l.index_db()] {
+        for path in [l.secrets_file(), l.index_db()] {
             assert!(
                 path.starts_with(l.local_dir()),
                 "{} must live under local/ so the written .gitignore covers it",

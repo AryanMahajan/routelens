@@ -1,0 +1,216 @@
+# A flow for the FastAPI fixture in tests/fixtures/fastapi — see docs/flows.md.
+#
+#   cd tests/fixtures/fastapi
+#   pip install -r requirements.txt
+#   uvicorn app.main:app --port 9000
+#
+# Open that directory in RouteLens, set the `local` environment's base_url to
+# http://localhost:9000 (the scan suggests it from the Procfile), add the secret
+# `api_token` = letmein in the {{ }} dialog, then copy this file to
+# tests/fixtures/fastapi/.routelens/flows/ and it appears under Flows.
+#
+#   health ─▶ create user ─▶ fetch it ─▶ if new ─true─▶ delete ─▶ gone?
+#   list items ─▶ item via /v2
+#
+# `create user` runs against the app's in-memory table, so the second run creates id 5,
+# the third id 6 — the condition and the 404 check stay honest every time.
+
+version: 1
+name: user lifecycle
+description: Create, read, delete and confirm gone — plus an items chain across the two mounts.
+nodes:
+  - id: health
+    name: health
+    position: { x: 80, y: 120 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0001
+      name: Liveness probe
+      spec_ref: GET /health
+      method: GET
+      url: "{{base_url}}/health"
+    assert:
+      - from: status
+        op: equals
+        expected: "200"
+      - from: body
+        path: ok
+        op: equals
+        expected: "true"
+
+  - id: create
+    name: create user
+    position: { x: 420, y: 120 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0002
+      name: Create a user
+      spec_ref: POST /api/v1/users
+      method: POST
+      url: "{{base_url}}/api/v1/users/"
+      auth:
+        type: bearer
+        token: "{{secret:api_token}}"
+      body:
+        type: json
+        content: '{"name": "Dana", "email": "dana@example.com"}'
+    extract:
+      - name: user_id
+        from: body
+        path: id
+    assert:
+      - from: status
+        op: equals
+        expected: "201"
+      - from: body
+        path: email
+        op: contains
+        expected: "@example.com"
+
+  - id: fetch
+    name: fetch it
+    position: { x: 760, y: 120 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0003
+      name: Fetch one user
+      spec_ref: GET /api/v1/users/{}
+      method: GET
+      url: "{{base_url}}/api/v1/users/{user_id}"
+      path_values:
+        user_id: "{{user_id}}"
+      headers:
+        - key: X-Trace-Id
+          value: flow-{{user_id}}
+    assert:
+      - from: status
+        op: less_than
+        expected: "400"
+      - from: body
+        path: name
+        op: equals
+        expected: Dana
+      - from: body
+        path: trace_id
+        op: equals
+        expected: flow-{{user_id}}
+
+  - id: is_new
+    name: is it a new row?
+    position: { x: 1100, y: 120 }
+    type: condition
+    left: "{{user_id}}"
+    op: greater_than
+    right: "3"
+
+  - id: delete
+    name: delete it
+    position: { x: 1420, y: 60 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0004
+      spec_ref: DELETE /api/v1/users/{}
+      method: DELETE
+      url: "{{base_url}}/api/v1/users/{user_id}"
+      path_values:
+        user_id: "{{user_id}}"
+      auth:
+        type: bearer
+        token: "{{secret:api_token}}"
+    assert:
+      - from: status
+        op: equals
+        expected: "204"
+
+  - id: gone
+    name: gone?
+    position: { x: 1760, y: 60 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0005
+      spec_ref: GET /api/v1/users/{}
+      method: GET
+      url: "{{base_url}}/api/v1/users/{user_id}"
+      path_values:
+        user_id: "{{user_id}}"
+    assert:
+      - from: status
+        op: equals
+        expected: "404"
+      - from: body
+        path: detail
+        op: contains
+        expected: no user
+
+  - id: seed_only
+    name: never runs (seed users are kept)
+    position: { x: 1420, y: 220 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0006
+      spec_ref: GET /api/v1/users
+      method: GET
+      url: "{{base_url}}/api/v1/users/"
+    assert:
+      - from: status
+        op: less_than
+        expected: "400"
+
+  - id: items
+    name: list items
+    position: { x: 80, y: 380 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0007
+      spec_ref: GET /v1/items
+      method: GET
+      url: "{{base_url}}/v1/items"
+      query:
+        - key: page
+          value: "2"
+    extract:
+      - name: first_item
+        from: body
+        path: items[0].id
+    assert:
+      - from: body
+        path: page
+        op: equals
+        expected: "2"
+      - from: header
+        header: content-type
+        op: contains
+        expected: application/json
+
+  - id: item_v2
+    name: same item via /v2
+    position: { x: 420, y: 380 }
+    type: request
+    request:
+      id: 7e3f3f0e-1b7d-4a1e-9b1a-0d1c3e6a0008
+      spec_ref: GET /v2/items/{}
+      method: GET
+      url: "{{base_url}}/v2/items/{item_id}"
+      path_values:
+        item_id: "{{first_item}}"
+    assert:
+      - from: body
+        path: id
+        op: equals
+        expected: "{{first_item}}"
+      - from: body
+        path: via
+        op: contains
+        expected: /v2/
+      - from: duration
+        op: less_than
+        expected: "2000"
+
+edges:
+  - { from: health, to: create }
+  - { from: create, to: fetch }
+  - { from: fetch, to: is_new }
+  - { from: is_new, to: delete, handle: "true" }
+  - { from: is_new, to: seed_only, handle: "false" }
+  - { from: delete, to: gone }
+  - { from: items, to: item_v2 }
