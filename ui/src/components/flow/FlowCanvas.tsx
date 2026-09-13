@@ -155,7 +155,11 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
   // rebuilt from the document and would feed a stale selection straight back up.
   const onNodesChange = useCallback(
     (changes: NodeChange<RfNode>[]) => {
+      // Applied to the ref as well as the state, so two batches of changes arriving
+      // before a re-render — a select then a drag — build on each other, not on a
+      // stale snapshot.
       const next = applyNodeChanges(changes, nodesRef.current);
+      nodesRef.current = next;
       setNodes(next);
       if (changes.some((c) => c.type === "select")) {
         const picked = next.filter((n) => n.selected);
