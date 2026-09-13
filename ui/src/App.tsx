@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, CoreError } from "./api";
+import {
+  addNode,
+  applyEvent,
+  conditionNode,
+  emptyFlow,
+  placeNew,
+  requestNode,
+  type LiveState,
+} from "./flow";
+import type { Flow, FlowEvent, FlowRun, Position } from "./flowTypes";
 import {
   emptyRequest,
   type EndpointSpec,
@@ -12,6 +22,8 @@ import {
 import { VariablesContext } from "./variables";
 import { EnrichDialog } from "./components/EnrichDialog";
 import { EnvironmentDialog } from "./components/EnvironmentDialog";
+import { FlowEditor } from "./components/flow/FlowEditor";
+import type { Pick } from "./components/flow/EndpointPicker";
 import { ImportDialog } from "./components/ImportDialog";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseViewer } from "./components/ResponseViewer";
@@ -19,7 +31,8 @@ import { Sidebar } from "./components/Sidebar";
 import { TabStrip } from "./components/TabStrip";
 
 /** One open request. Everything a tab shows lives here, so switching tabs loses nothing. */
-interface Tab {
+interface RequestTab {
+  kind: "request";
   id: string;
   request: RequestDraft;
   exchange: Exchange | null;
@@ -31,8 +44,26 @@ interface Tab {
   collection: string | null;
 }
 
-function newTab(request: RequestDraft, collection: string | null = null): Tab {
+/** One open flow: the document, and the state of its latest run. */
+interface FlowTab {
+  kind: "flow";
+  id: string;
+  flow: Flow;
+  saved: string;
+  /** The name the file on disk has, so a rename in the toolbar moves it on save. */
+  savedName: string | null;
+  selected: string | null;
+  live: LiveState;
+  run: FlowRun | null;
+  running: boolean;
+  error: string | null;
+}
+
+type Tab = RequestTab | FlowTab;
+
+function newTab(request: RequestDraft, collection: string | null = null): RequestTab {
   return {
+    kind: "request",
     id: crypto.randomUUID(),
     request,
     exchange: null,
@@ -41,6 +72,25 @@ function newTab(request: RequestDraft, collection: string | null = null): Tab {
     saved: JSON.stringify(request),
     collection,
   };
+}
+
+function newFlowTab(flow: Flow, savedName: string | null): FlowTab {
+  return {
+    kind: "flow",
+    id: crypto.randomUUID(),
+    flow,
+    saved: JSON.stringify(flow),
+    savedName,
+    selected: null,
+    live: {},
+    run: null,
+    running: false,
+    error: null,
+  };
+}
+
+function isDirty(tab: Tab): boolean {
+  return tab.kind === "request" ? tab.saved !== JSON.stringify(tab.request) : tab.saved !== JSON.stringify(tab.flow);
 }
 
 function describe(e: unknown): string {
@@ -77,33 +127,43 @@ export default function App() {
   }, [activeId, tabs]);
 
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0] ?? null;
+  // Handlers created inside effects and event callbacks need the current tab, not the one
+  // from the render they were created in.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
-  function updateTab(id: string, changes: Partial<Tab>) {
-    setTabs((current) => current.map((t) => (t.id === id ? { ...t, ...changes } : t)));
+  function updateTab(id: string, changes: Partial<RequestTab>) {
+    setTabs((current) => current.map((t) => (t.id === id && t.kind === "request" ? { ...t, ...changes } : t)));
   }
 
-  function openTab(
-    request: RequestDraft,
-    matchOn?: (tab: Tab) => boolean,
-    collection: string | null = null,
-  ) {
+  const updateFlowTab = useCallback((id: string, update: (tab: FlowTab) => FlowTab) => {
+    setTabs((current) => current.map((t) => (t.id === id && t.kind === "flow" ? update(t) : t)));
+  }, []);
+
+  function replaceOrAppend(tab: Tab) {
+    // A pristine blank request tab is replaced rather than left behind.
+    const blank =
+      active && active.kind === "request" && !active.request.url && active.saved === JSON.stringify(active.request);
+    setTabs((current) => (blank ? current.map((t) => (t.id === active.id ? tab : t)) : [...current, tab]));
+    setActiveId(tab.id);
+  }
+
+  function openTab(request: RequestDraft, matchOn?: (tab: RequestTab) => boolean, collection: string | null = null) {
     // Re-use an untouched tab that already shows the same thing, otherwise open a new one.
-    const existing = matchOn ? tabs.find((t) => matchOn(t) && t.saved === JSON.stringify(t.request)) : undefined;
+    const existing = matchOn
+      ? tabs.find((t): t is RequestTab => t.kind === "request" && matchOn(t) && !isDirty(t))
+      : undefined;
     if (existing) {
       setActiveId(existing.id);
       return;
     }
-    // A pristine blank tab is replaced rather than left behind.
-    const blank = active && !active.request.url && active.saved === JSON.stringify(active.request);
-    const tab = newTab(request, collection);
-    setTabs((current) => (blank ? current.map((t) => (t.id === active.id ? tab : t)) : [...current, tab]));
-    setActiveId(tab.id);
+    replaceOrAppend(newTab(request, collection));
   }
 
   function closeTab(id: string) {
     const tab = tabs.find((t) => t.id === id);
     if (!tab) return;
-    if (tab.saved !== JSON.stringify(tab.request) && !window.confirm("Close this tab and discard its unsaved changes?")) {
+    if (isDirty(tab) && !window.confirm("Close this tab and discard its unsaved changes?")) {
       return;
     }
     const index = tabs.findIndex((t) => t.id === id);
@@ -154,8 +214,16 @@ export default function App() {
       // Discovery is the point of opening a project, so do it without being asked.
       if (info.kind === "project") void runScan();
     } catch (e) {
-      if (active) updateTab(active.id, { error: describe(e) });
+      showError(describe(e));
     }
+  }
+
+  /** Put an error in front of the user on whichever tab is active. */
+  function showError(message: string) {
+    const tab = activeRef.current;
+    if (!tab) return;
+    if (tab.kind === "request") updateTab(tab.id, { error: message });
+    else updateFlowTab(tab.id, (t) => ({ ...t, error: message }));
   }
 
   async function runScan() {
@@ -166,22 +234,30 @@ export default function App() {
       // A scan may have seeded the environment's base_url.
       setWorkspace(await api.workspaceInfo());
     } catch (e) {
-      if (active) updateTab(active.id, { error: describe(e) });
+      showError(describe(e));
     } finally {
       setScanning(false);
     }
   }
 
+  // --- requests -----------------------------------------------------------------------
+
   async function openEndpoint(endpoint: EndpointSpec) {
+    const tab = activeRef.current;
+    // With a flow in front, the endpoint becomes a step in it — after the selected card.
+    if (tab?.kind === "flow") {
+      await addEndpointToFlow(tab.id, endpoint.id, null);
+      return;
+    }
     try {
       const request = await api.openEndpoint(endpoint.id);
       openTab(request, (t) => t.request.spec_ref === request.spec_ref);
     } catch (e) {
-      if (active) updateTab(active.id, { error: describe(e) });
+      showError(describe(e));
     }
   }
 
-  async function send(tab: Tab) {
+  async function send(tab: RequestTab) {
     updateTab(tab.id, { sending: true, error: null });
     try {
       const exchange = await api.send(tab.request);
@@ -194,7 +270,7 @@ export default function App() {
     }
   }
 
-  async function save(tab: Tab) {
+  async function save(tab: RequestTab) {
     if (!workspace) return;
     const named: RequestDraft = {
       ...tab.request,
@@ -211,7 +287,7 @@ export default function App() {
     }
   }
 
-  async function importCurl(tab: Tab, text: string) {
+  async function importCurl(tab: RequestTab, text: string) {
     try {
       const result = await api.importCurl(text);
       const request = { ...result.value, id: tab.request.id };
@@ -225,23 +301,131 @@ export default function App() {
     }
   }
 
-  // Ctrl/Cmd+Enter sends, Ctrl+S saves, Ctrl+T opens a tab, Ctrl+W closes one — from
-  // anywhere, including inside an input.
+  // --- flows --------------------------------------------------------------------------
+
+  async function openFlow(name: string) {
+    const existing = tabs.find((t): t is FlowTab => t.kind === "flow" && t.savedName === name);
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    try {
+      const flow = await api.loadFlow(name);
+      replaceOrAppend(newFlowTab(flow, name));
+    } catch (e) {
+      showError(describe(e));
+    }
+  }
+
+  function newFlow() {
+    const taken = new Set([
+      ...(workspace?.flows ?? []),
+      ...tabs.filter((t): t is FlowTab => t.kind === "flow").map((t) => t.flow.name),
+    ]);
+    let name = "Untitled flow";
+    for (let n = 2; taken.has(name); n++) name = `Untitled flow ${n}`;
+    replaceOrAppend(newFlowTab(emptyFlow(name), null));
+  }
+
+  /** Wire a new node into a flow tab after its selected card, and select the new one. */
+  const insertNode = useCallback(
+    (tabId: string, build: (flow: Flow, selected: string | null) => { flow: Flow; id: string }) => {
+      updateFlowTab(tabId, (t) => {
+        const { flow, id } = build(t.flow, t.selected);
+        return { ...t, flow, selected: id };
+      });
+    },
+    [updateFlowTab],
+  );
+
+  async function addEndpointToFlow(tabId: string, endpointId: string, at: Position | null) {
+    try {
+      const request = await api.openEndpoint(endpointId);
+      insertNode(tabId, (flow, selected) => {
+        const after = at ? null : selected;
+        const node = requestNode(request, at ?? placeNew(flow, after));
+        return { flow: addNode(flow, node, after ? { id: after } : null), id: node.id };
+      });
+    } catch (e) {
+      updateFlowTab(tabId, (t) => ({ ...t, error: describe(e) }));
+    }
+  }
+
+  function addToFlow(tab: FlowTab, pick: Pick) {
+    if (pick.kind === "endpoint") {
+      void addEndpointToFlow(tab.id, pick.endpoint.id, null);
+      return;
+    }
+    insertNode(tab.id, (flow, selected) => {
+      const position = placeNew(flow, selected);
+      const node =
+        pick.kind === "blank"
+          ? requestNode({ ...emptyRequest(), url: "{{base_url}}/" }, position)
+          : conditionNode(position);
+      return { flow: addNode(flow, node, selected ? { id: selected } : null), id: node.id };
+    });
+  }
+
+  async function saveFlow(tab: FlowTab) {
+    if (!workspace) return;
+    const name = tab.flow.name.trim();
+    if (!name) return;
+    const flow = { ...tab.flow, name };
+    try {
+      if (tab.savedName && tab.savedName !== name) {
+        await api.renameFlow(tab.savedName, name);
+      } else if (!tab.savedName && workspace.flows.includes(name)) {
+        throw new CoreError(`A flow named "${name}" already exists. Pick another name.`);
+      }
+      await api.saveFlow(flow);
+      updateFlowTab(tab.id, (t) => ({ ...t, flow, saved: JSON.stringify(flow), savedName: name, error: null }));
+      refresh();
+    } catch (e) {
+      updateFlowTab(tab.id, (t) => ({ ...t, error: describe(e) }));
+    }
+  }
+
+  async function runFlow(tab: FlowTab) {
+    if (tab.running || tab.flow.nodes.length === 0) return;
+    updateFlowTab(tab.id, (t) => ({ ...t, running: true, run: null, live: {}, error: null }));
+    const onEvent = (event: FlowEvent) =>
+      updateFlowTab(tab.id, (t) => ({
+        ...t,
+        live: applyEvent(t.live, event),
+        run: event.event === "finished" ? event.run : t.run,
+      }));
+    try {
+      const run = await api.runFlow(tab.flow, onEvent);
+      updateFlowTab(tab.id, (t) => ({ ...t, run, running: false }));
+    } catch (e) {
+      updateFlowTab(tab.id, (t) => ({ ...t, running: false, error: describe(e) }));
+    } finally {
+      // Every request the run sent is in history now.
+      refresh();
+    }
+  }
+
+  // Ctrl/Cmd+Enter sends or runs, Ctrl+S saves, Ctrl+T opens a tab, Ctrl+W closes one —
+  // from anywhere, including inside an input.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key === "Enter" && active && !active.sending && active.request.url) {
+      const tab = activeRef.current;
+      if (event.key === "Enter" && tab) {
         event.preventDefault();
-        void send(active);
+        if (tab.kind === "request" && !tab.sending && tab.request.url) void send(tab);
+        if (tab.kind === "flow") void runFlow(tab);
       } else if (event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (active && workspace && active.request.url) void save(active);
+        if (!tab || !workspace) return;
+        if (tab.kind === "request" && tab.request.url) void save(tab);
+        if (tab.kind === "flow") void saveFlow(tab);
       } else if (event.key.toLowerCase() === "t") {
         event.preventDefault();
         openTab(emptyRequest());
-      } else if (event.key.toLowerCase() === "w" && active) {
+      } else if (event.key.toLowerCase() === "w" && tab) {
         event.preventDefault();
-        closeTab(active.id);
+        closeTab(tab.id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -263,26 +447,32 @@ export default function App() {
           onScan={runScan}
           onEnrich={() => setEnriching(true)}
           onOpenEndpoint={openEndpoint}
+          addingToFlow={active?.kind === "flow"}
+          onOpenFlow={openFlow}
+          onNewFlow={newFlow}
           onChanged={refresh}
-          onOpenRequest={(saved, collection) =>
-            openTab(saved, (t) => t.request.id === saved.id, collection)
-          }
+          onOpenRequest={(saved, collection) => openTab(saved, (t) => t.request.id === saved.id, collection)}
         />
 
         <main className="flex min-w-0 flex-1 flex-col">
           <TabStrip
-            tabs={tabs.map((t) => ({
-              id: t.id,
-              request: t.request,
-              dirty: t.saved !== JSON.stringify(t.request),
-            }))}
+            tabs={tabs.map((t) =>
+              t.kind === "request"
+                ? {
+                    id: t.id,
+                    label: t.request.name?.trim() || t.request.url || "New request",
+                    method: t.request.method,
+                    dirty: isDirty(t),
+                  }
+                : { id: t.id, label: t.flow.name || "Untitled flow", method: null, dirty: isDirty(t) },
+            )}
             activeId={active?.id ?? null}
             onActivate={setActiveId}
             onClose={closeTab}
             onNew={() => openTab(emptyRequest())}
           />
 
-          {active && (
+          {active?.kind === "request" && (
             <>
               <div className="flex shrink-0 items-center gap-2 border-b border-edge px-3 py-2">
                 <input
@@ -332,13 +522,28 @@ export default function App() {
               />
 
               <div className="flex min-h-0 flex-[1.2] flex-col">
-                <ResponseViewer
-                  exchange={active.exchange}
-                  error={active.error}
-                  sending={active.sending}
-                />
+                <ResponseViewer exchange={active.exchange} error={active.error} sending={active.sending} />
               </div>
             </>
+          )}
+
+          {active?.kind === "flow" && (
+            <FlowEditor
+              key={active.id}
+              flow={active.flow}
+              live={active.live}
+              run={active.run}
+              running={active.running}
+              selected={active.selected}
+              scan={scan}
+              error={active.error}
+              onChange={(update) => updateFlowTab(active.id, (t) => ({ ...t, flow: update(t.flow) }))}
+              onSelect={(id) => updateFlowTab(active.id, (t) => (t.selected === id ? t : { ...t, selected: id }))}
+              onAdd={(pick) => addToFlow(active, pick)}
+              onDropEndpoint={(endpoint, position) => void addEndpointToFlow(active.id, endpoint, position)}
+              onRun={() => runFlow(active)}
+              onSave={() => saveFlow(active)}
+            />
           )}
         </main>
 
@@ -380,3 +585,4 @@ export default function App() {
     </VariablesContext.Provider>
   );
 }
+

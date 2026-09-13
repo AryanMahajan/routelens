@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, CoreError } from "../api";
 import type { EndpointSpec, ScanResult } from "../types";
+import { ENDPOINT_DRAG_TYPE } from "./flow/FlowCanvas";
 import { MethodBadge } from "./MethodBadge";
 
 /**
@@ -17,6 +18,7 @@ export function Explorer({
   onEnrich,
   onSaveAll,
   onOpenEndpoint,
+  addingToFlow,
 }: {
   scan: ScanResult | null;
   scanning: boolean;
@@ -25,6 +27,8 @@ export function Explorer({
   /** Save every resolved endpoint as one collection, filed by group. */
   onSaveAll: () => void;
   onOpenEndpoint: (endpoint: EndpointSpec) => void;
+  /** A flow is in front: clicking an endpoint adds it there instead of opening a tab. */
+  addingToFlow?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -181,6 +185,7 @@ export function Explorer({
                   key={endpoint.id}
                   endpoint={endpoint}
                   onOpen={() => onOpenEndpoint(endpoint)}
+                  addingToFlow={addingToFlow ?? false}
                 />
               ))}
           </div>
@@ -193,9 +198,11 @@ export function Explorer({
 function EndpointRow({
   endpoint,
   onOpen,
+  addingToFlow,
 }: {
   endpoint: EndpointSpec;
   onOpen: () => void;
+  addingToFlow: boolean;
 }) {
   const [revealError, setRevealError] = useState(false);
 
@@ -210,14 +217,24 @@ function EndpointRow({
   }
 
   return (
-    <div className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-raised">
+    <div
+      className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-raised"
+      draggable={!endpoint.unresolved}
+      onDragStart={(event) => {
+        // Dropping onto a flow canvas adds the endpoint as a step.
+        event.dataTransfer.setData(ENDPOINT_DRAG_TYPE, endpoint.id);
+        event.dataTransfer.effectAllowed = "copy";
+      }}
+    >
       <button
         onClick={onOpen}
         disabled={endpoint.unresolved}
         title={
           endpoint.unresolved
             ? `Path could not be resolved: ${endpoint.unresolved_exprs.join(", ")}`
-            : (endpoint.summary ?? endpoint.display)
+            : addingToFlow
+              ? "Add to the open flow — or drag it onto the canvas"
+              : (endpoint.summary ?? endpoint.display)
         }
         className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
       >

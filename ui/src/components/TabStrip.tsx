@@ -1,14 +1,16 @@
-import type { RequestDraft } from "../types";
+import type { HttpMethod } from "../types";
 import { MethodBadge } from "./MethodBadge";
 
 export interface TabSummary {
   id: string;
-  request: RequestDraft;
+  label: string;
+  /** A request tab shows its method; a flow tab shows a flow mark instead. */
+  method: HttpMethod | null;
   dirty: boolean;
 }
 
 /**
- * One tab per open request, the way every API client and browser does it.
+ * One tab per open request or flow, the way every API client and browser does it.
  *
  * A dot marks unsaved edits. Middle-click closes; so does the ✕ that appears on hover.
  */
@@ -29,7 +31,7 @@ export function TabStrip({
     <div className="flex shrink-0 items-stretch overflow-x-auto border-b border-edge bg-panel">
       {tabs.map((tab) => {
         const active = tab.id === activeId;
-        const label = tab.request.name?.trim() || tab.request.url || "New request";
+        const label = tab.label;
         return (
           <div
             key={tab.id}
@@ -42,7 +44,16 @@ export function TabStrip({
             className={`group relative flex max-w-56 shrink-0 cursor-default items-center gap-2 border-r
               border-edge px-3 py-2 ${active ? "bg-ground text-ink" : "text-muted hover:text-ink"}`}
           >
-            <MethodBadge method={tab.request.method} className="shrink-0" />
+            {tab.method !== null ? (
+              <MethodBadge method={tab.method} className="shrink-0" />
+            ) : (
+              <span
+                className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-accent"
+                title="Flow"
+              >
+                FLOW
+              </span>
+            )}
             <span className="min-w-0 flex-1 truncate" title={label}>
               {label}
             </span>

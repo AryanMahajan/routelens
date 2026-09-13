@@ -94,3 +94,119 @@ button {
   font: inherit;
   color: inherit;
 }
+
+/* --- flow canvas -----------------------------------------------------------------------
+   React Flow draws the canvas; these variables pull it onto the same palette, and the
+   `rl-*` classes carry run status on cards and edges. */
+.react-flow {
+  --xy-background-color: var(--t-ground);
+  --xy-background-pattern-color: var(--t-edge);
+  --xy-edge-stroke: var(--t-muted);
+  --xy-edge-stroke-selected: var(--t-accent);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-label-background-color: var(--t-panel);
+  --xy-edge-label-color: var(--t-muted);
+  --xy-connectionline-stroke: var(--t-accent);
+  --xy-controls-button-background-color: var(--t-panel);
+  --xy-controls-button-background-color-hover: var(--t-raised);
+  --xy-controls-button-color: var(--t-muted);
+  --xy-controls-button-color-hover: var(--t-ink);
+  --xy-controls-button-border-color: var(--t-edge);
+  --xy-controls-box-shadow: none;
+  --xy-minimap-background-color: var(--t-panel);
+  --xy-minimap-mask-background-color: rgb(0 0 0 / 0.3);
+  --xy-minimap-node-background-color: var(--t-raised);
+  --xy-selection-background-color: rgb(124 156 255 / 0.08);
+  --xy-selection-border: 1px dashed var(--t-accent);
+  --xy-attribution-background-color: transparent;
+  --xy-handle-background-color: var(--t-muted);
+  --xy-handle-border-color: var(--t-panel);
+}
+.react-flow__attribution a {
+  color: var(--t-muted);
+}
+.react-flow__edge-textbg {
+  fill: var(--t-panel);
+}
+.react-flow__edge-text {
+  fill: var(--t-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.react-flow__minimap-mask {
+  fill: var(--xy-minimap-mask-background-color);
+}
+
+.rl-node {
+  width: 260px;
+  border-radius: 8px;
+  border: 1.5px solid var(--t-edge);
+  background: var(--t-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  font-size: 12px;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.rl-node-condition {
+  width: 240px;
+}
+.rl-node-selected {
+  box-shadow:
+    0 0 0 2px var(--t-accent),
+    0 1px 2px rgb(0 0 0 / 0.25);
+}
+.rl-node-running {
+  border-color: var(--t-accent);
+  animation: rl-pulse 1.2s ease-in-out infinite;
+}
+.rl-node-passed {
+  border-color: var(--t-get);
+}
+.rl-node-failed {
+  border-color: var(--t-delete);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-delete) 18%, transparent);
+}
+.rl-node-failed.rl-node-selected {
+  box-shadow:
+    0 0 0 2px var(--t-accent),
+    0 0 0 5px color-mix(in srgb, var(--t-delete) 18%, transparent);
+}
+.rl-node-skipped {
+  border-style: dashed;
+  opacity: 0.6;
+}
+@keyframes rl-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.rl-handle {
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+}
+.rl-handle-true {
+  background: var(--t-get);
+}
+.rl-handle-false {
+  background: var(--t-delete);
+}
+
+.rl-edge-taken .react-flow__edge-path {
+  stroke: var(--t-get);
+  stroke-width: 2;
+}
+.rl-edge-dead .react-flow__edge-path {
+  stroke: var(--t-delete);
+  stroke-width: 2;
+}
+.rl-edge-inactive .react-flow__edge-path {
+  stroke-dasharray: 5 5;
+  opacity: 0.45;
+}

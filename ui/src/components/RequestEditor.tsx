@@ -17,10 +17,11 @@ export function RequestEditor({
 }: {
   request: RequestDraft;
   onChange: (request: RequestDraft) => void;
-  onSend: () => void;
+  /** Absent inside a flow, where a step runs with the whole flow rather than on its own. */
+  onSend?: () => void;
   /** A cURL command landed in the URL bar; the parent turns it into a request. */
-  onCurl: (text: string) => void;
-  sending: boolean;
+  onCurl?: (text: string) => void;
+  sending?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("params");
 
@@ -64,29 +65,31 @@ export function RequestEditor({
           value={request.url}
           onChange={(url) => {
             // Paste a whole cURL command here and it becomes the request — no dialog.
-            if (/^\s*curl\s/i.test(url)) {
+            if (onCurl && /^\s*curl\s/i.test(url)) {
               onCurl(url);
               return;
             }
             patch({ url });
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !sending) onSend();
+            if (e.key === "Enter" && !sending && onSend) onSend();
           }}
           placeholder="{{base_url}}/api/v1/users — or paste a cURL command"
           className="rounded border border-edge bg-panel px-3 py-1.5 font-mono
             outline-none placeholder:text-muted/60 focus:border-accent"
         />
 
-        <button
-          onClick={onSend}
-          disabled={sending || !request.url}
-          title="Ctrl+Enter"
-          className="shrink-0 rounded bg-accent px-4 py-1.5 font-semibold text-ground transition
-            hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {sending ? "Sending…" : "Send"}
-        </button>
+        {onSend && (
+          <button
+            onClick={onSend}
+            disabled={sending || !request.url}
+            title="Ctrl+Enter"
+            className="shrink-0 rounded bg-accent px-4 py-1.5 font-semibold text-ground transition
+              hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}

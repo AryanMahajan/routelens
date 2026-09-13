@@ -185,6 +185,7 @@ export interface WorkspaceInfo {
   kind: "project" | "standalone";
   collections: string[];
   environments: string[];
+  flows: string[];
   active_environment?: string | null;
   /** Secret names the active environment expects but the store does not hold. */
   missing_secrets: string[];

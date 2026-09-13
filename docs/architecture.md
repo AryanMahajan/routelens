@@ -36,6 +36,7 @@ routelens/
 │   ├── rl-discovery/     # project detect, source index, registration graph, adapters
 │   ├── rl-import/        # cURL, OpenAPI, raw HTTP importers
 │   ├── rl-http/          # request execution engine
+│   ├── rl-flow/          # flow runner: dependency order, extraction, assertions
 │   ├── rl-workspace/     # workspace files, secrets, history, index cache
 │   └── rl-core/          # facade — the only surface the shell calls
 ├── src-tauri/            # Tauri v2 shell
@@ -57,7 +58,7 @@ everything a shell needs. That is a side benefit, not the goal.
 ```
 rl-model  ←──  rl-discovery
     ↑      ←──  rl-import
-    │      ←──  rl-http
+    │      ←──  rl-http  ←──  rl-flow
     │      ←──  rl-workspace
     │                │
     └──────  rl-core ┘
@@ -83,6 +84,12 @@ Framework adapters live under `adapters/` and are deliberately thin; the registr
 **`rl-import`** — three importers, one output type. `openapi.rs` is reused by runtime enrich.
 
 **`rl-http`** — request execution. Deliberately low-magic; see below.
+
+**`rl-flow`** — runs a `Flow` (the model lives in `rl-model`): execution order from the
+edges, skip semantics for failed and untaken branches, extraction of response values into
+variables, assertions. It sends through a `Sender` trait — `rl-http` in the application, a
+scripted fake in its tests — and streams `FlowEvent`s so the canvas lights up as it goes.
+See [flows](flows.md).
 
 **`rl-workspace`** — the three storage tiers, YAML serialization with stable ordering, secret
 handling, SQLite for history and the source index.
@@ -150,6 +157,7 @@ React + TypeScript + Vite. Three panes: endpoint tree, request editor, response 
 | `rl-discovery` | **Fixture snapshot tests** — the highest-value investment in the project |
 | `rl-import` | Round-trip tests: parse → model → re-emit, over a real-world cURL corpus |
 | `rl-http` | Tests against a local mock server |
+| `rl-flow` | Runner tests through a fake `Sender`: chaining, skip paths, branches, undefined variables |
 | `rl-workspace` | Round-trip YAML; a redaction test that must never regress |
 | Performance | Scan budgets, cold and warm, asserted in CI |
 

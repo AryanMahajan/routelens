@@ -11,6 +11,8 @@ open.
 ├── environments/
 │   ├── local.yaml            # committed — variable names, non-secret values
 │   └── staging.yaml          # committed
+├── flows/
+│   └── login smoke.yaml      # committed — a multi-step API test (see ../flows.md)
 ├── .gitignore                # committed — ignores local/
 └── local/                    # never committed
     ├── secrets.json          # secret values (or an OS keychain reference)

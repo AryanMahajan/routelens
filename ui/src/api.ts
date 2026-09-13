@@ -5,7 +5,16 @@
  * names — which are strings, and so invisible to the type checker — are written once.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import {
+  normalizeFlow,
+  normalizeFlowRun,
+  normalizeNodeResult,
+  type Flow,
+  type FlowEvent,
+  type FlowRun,
+  type WireFlow,
+} from "./flowTypes";
 import {
   normalizeRequest,
   type Collection,
@@ -81,6 +90,31 @@ export const api = {
   deleteCollection: (name: string) => call<void>("delete_collection", { name }),
   renameCollection: (from: string, to: string) =>
     call<void>("rename_collection", { from, to }),
+
+  // --- flows ---
+  loadFlow: async (name: string): Promise<Flow> =>
+    normalizeFlow(await call<WireFlow>("load_flow", { name })),
+  saveFlow: (flow: Flow) => call<void>("save_flow", { flow }),
+  deleteFlow: (name: string) => call<void>("delete_flow", { name }),
+  renameFlow: (from: string, to: string) => call<void>("rename_flow", { from, to }),
+  /**
+   * Run a flow. `onEvent` fires for every step as it happens; the promise resolves with the
+   * whole run once the last node has finished. Rejects only for a flow that cannot run at
+   * all — a cycle, a dangling edge — never for a node that failed.
+   */
+  runFlow: async (flow: Flow, onEvent: (event: FlowEvent) => void): Promise<FlowRun> => {
+    const channel = new Channel<FlowEvent>();
+    channel.onmessage = (event) => {
+      if (event.event === "node_finished") {
+        onEvent({ event: "node_finished", result: normalizeNodeResult(event.result) });
+      } else if (event.event === "finished") {
+        onEvent({ event: "finished", run: normalizeFlowRun(event.run) });
+      } else {
+        onEvent(event);
+      }
+    };
+    return normalizeFlowRun(await call<FlowRun>("run_flow", { flow, onEvent: channel }));
+  },
 
   // --- discovery (reads source; never executes it) ---
   scanProject: async () => normalizeScan(await call<ScanResult>("scan_project")),

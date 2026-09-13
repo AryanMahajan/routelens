@@ -90,6 +90,10 @@ project have?"* to *"I can see it, understand it, and test it."*
   **Collections are yours**: saved requests live in your user data directory and follow
   you into every project.
 - **Import** from cURL, raw HTTP and OpenAPI 3.x / Swagger 2.0.
+- **Flows**: multi-step API tests on a canvas. Drag discovered endpoints in, wire them up,
+  extract `{{auth_token}}` from one response into the next request, assert on status,
+  headers and body, run the whole thing and read the failure path off the graph — then jump
+  from the failing card to the handler in your editor. Saved with the project.
 
 Verified by 460+ tests, including fixture projects per framework whose snapshots record
 **expected misses** as well as hits, a run against the `expressjs/express` repository
@@ -190,7 +194,7 @@ Longer version: [how it works](docs/discovery/how-it-works.md).
 Start at **[docs/](docs/)**.
 
 - [Getting started](docs/getting-started.md) · [Concepts](docs/concepts.md) ·
-  [Import](docs/import.md)
+  [Import](docs/import.md) · [Flows](docs/flows.md)
 - [How discovery works](docs/discovery/how-it-works.md) ·
   [Framework support](docs/discovery/frameworks.md) ·
   [Adding a framework](docs/discovery/adding-a-framework.md)

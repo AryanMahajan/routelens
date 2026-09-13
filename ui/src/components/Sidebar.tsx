@@ -11,9 +11,10 @@ import type {
 } from "../types";
 import { Collections } from "./Collections";
 import { Explorer } from "./Explorer";
+import { Flows } from "./Flows";
 import { MethodBadge } from "./MethodBadge";
 
-type Panel = "api" | "collections" | "history";
+type Panel = "api" | "flows" | "collections" | "history";
 
 export function Sidebar({
   workspace,
@@ -29,6 +30,9 @@ export function Sidebar({
   onScan,
   onEnrich,
   onOpenEndpoint,
+  addingToFlow,
+  onOpenFlow,
+  onNewFlow,
 }: {
   workspace: WorkspaceInfo | null;
   onOpenRequest: (request: RequestDraft, collection: string) => void;
@@ -44,6 +48,10 @@ export function Sidebar({
   onScan: () => void;
   onEnrich: () => void;
   onOpenEndpoint: (endpoint: EndpointSpec) => void;
+  /** A flow tab is in front, so an endpoint click adds a step rather than opening a tab. */
+  addingToFlow: boolean;
+  onOpenFlow: (name: string) => void;
+  onNewFlow: () => void;
 }) {
   // The API tree is the reason RouteLens exists, so it opens first for a project workspace.
   const [panel, setPanel] = useState<Panel>("api");
@@ -171,7 +179,7 @@ export function Sidebar({
 
       {/* Panel switch */}
       <div className="flex shrink-0 border-b border-edge">
-        {(["api", "collections", "history"] as Panel[]).map((name) => (
+        {(["api", "flows", "collections", "history"] as Panel[]).map((name) => (
           <button
             key={name}
             onClick={() => setPanel(name)}
@@ -196,6 +204,7 @@ export function Sidebar({
               onEnrich={onEnrich}
               onSaveAll={saveAll}
               onOpenEndpoint={onOpenEndpoint}
+              addingToFlow={addingToFlow}
             />
           ) : (
             <p className="px-3 py-4 text-muted">
@@ -215,6 +224,13 @@ export function Sidebar({
             {notice}
           </p>
         )}
+        {panel === "flows" &&
+          (workspace ? (
+            <Flows flows={workspace.flows} onOpen={onOpenFlow} onNew={onNewFlow} onChanged={onChanged} />
+          ) : (
+            <p className="px-2 py-4 text-muted">Open a project to build flows from its API.</p>
+          ))}
+
         {panel === "collections" &&
           (workspace ? (
             <Collections

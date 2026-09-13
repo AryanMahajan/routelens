@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, currentTheme } from "./theme";
+import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
 applyTheme(currentTheme());
