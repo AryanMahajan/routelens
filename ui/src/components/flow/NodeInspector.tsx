@@ -1,6 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, CoreError } from "../../api";
 import { nodeLabel, type NodeLive } from "../../flow";
+import {
+  matchingHistory,
+  responseOf,
+  shapeOf,
+  suggestName,
+  type PathEntry,
+  type ResponseShape,
+} from "../../responseShape";
 import {
   describeFailure,
   describeSource,
@@ -20,6 +28,7 @@ import { MethodBadge } from "../MethodBadge";
 import { RequestEditor } from "../RequestEditor";
 import { ResponseViewer } from "../ResponseViewer";
 import { VariableInput, VariableTextarea } from "../VariableInput";
+import { PathPicker } from "./PathPicker";
 
 type Tab = "request" | "extract" | "assert" | "result";
 
@@ -55,6 +64,7 @@ export function NodeInspector({
 }) {
   const [tab, setTab] = useState<Tab>(live?.result ? "result" : "request");
   const result = live?.result ?? null;
+  const shape = useResponseShape(node, live);
 
   const tabs: { id: Tab; label: string; count?: number }[] =
     node.type === "request"
@@ -156,14 +166,67 @@ export function NodeInspector({
           <DisplayEditor text={node.text} onChange={(text) => onChange({ text })} />
         )}
         {tab === "extract" && node.type === "request" && (
-          <ExtractEditor rows={node.extract} onChange={(extract) => onChange({ extract })} />
+          <ExtractEditor rows={node.extract} onChange={(extract) => onChange({ extract })} shape={shape} />
         )}
         {tab === "assert" && node.type === "request" && (
-          <AssertEditor rows={node.assert} onChange={(assert) => onChange({ assert })} />
+          <AssertEditor rows={node.assert} onChange={(assert) => onChange({ assert })} shape={shape} />
         )}
         {tab === "result" && <ResultView node={node} live={live} culprit={culprit} />}
       </div>
     </aside>
+  );
+}
+
+/**
+ * The shape of this step's response, for the extract and assert pickers: what the last
+ * run got back, or — before any run — the newest history entry for the same endpoint,
+ * which a request tab or an earlier flow may have produced.
+ */
+function useResponseShape(node: FlowNode, live: NodeLive | null): ResponseShape | null {
+  const exchange = live?.result?.exchange ?? null;
+  const method = node.type === "request" ? node.request.method : "";
+  const url = node.type === "request" ? node.request.url : "";
+  const [fromHistory, setFromHistory] = useState<ResponseShape | null>(null);
+
+  useEffect(() => {
+    if (exchange || !url) return;
+    let cancelled = false;
+    void api
+      .history(200)
+      .then((entries) => {
+        if (cancelled) return;
+        const entry = matchingHistory(entries, method, url);
+        const response = entry ? responseOf(entry) : null;
+        setFromHistory(response && entry ? shapeOf(response, "history", entry.at) : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [exchange, method, url]);
+
+  if (exchange) return shapeOf(exchange.response, "run");
+  return fromHistory;
+}
+
+function ShapeNote({ shape }: { shape: ResponseShape | null }) {
+  if (!shape) {
+    return (
+      <p className="text-[11px] text-muted">
+        Paths can be picked from a real response: run this card once (▶ Step), or send the
+        request from a tab, and the list appears here.
+      </p>
+    );
+  }
+  const when =
+    shape.source === "run"
+      ? "the last run"
+      : `history, ${shape.at ? new Date(shape.at * (shape.at < 1e12 ? 1000 : 1)).toLocaleString() : "earlier"}`;
+  return (
+    <p className="text-[11px] text-muted">
+      Picking from {when}: <span className="font-mono">{shape.status}</span>, {shape.paths.length} path
+      {shape.paths.length === 1 ? "" : "s"}, {shape.headers.length} header{shape.headers.length === 1 ? "" : "s"}.
+    </p>
   );
 }
 
@@ -205,7 +268,21 @@ function withSource<T extends ValueSource>(row: T, from: ValueSource["from"]): T
   return { ...rest, ...source } as T;
 }
 
-function SourceFields<T extends ValueSource>({ row, onChange }: { row: T; onChange: (row: T) => void }) {
+function SourceFields<T extends ValueSource>({
+  row,
+  onChange,
+  shape,
+  onPick,
+}: {
+  row: T;
+  onChange: (row: T) => void;
+  shape: ResponseShape | null;
+  /** A path or header was chosen from the response, with what was found there. */
+  onPick?: (entry: PathEntry) => void;
+}) {
+  const headerOptions: PathEntry[] | null = shape
+    ? shape.headers.map((h) => ({ path: h, preview: "", scalar: true, text: "" }))
+    : null;
   return (
     <>
       <select
@@ -220,20 +297,24 @@ function SourceFields<T extends ValueSource>({ row, onChange }: { row: T; onChan
         ))}
       </select>
       {row.from === "body" && (
-        <input
+        <PathPicker
           value={row.path}
-          onChange={(e) => onChange({ ...row, path: e.target.value })}
+          onChange={(path) => onChange({ ...row, path })}
+          onPick={onPick}
+          options={shape?.paths ?? null}
           placeholder="user.id"
-          spellCheck={false}
+          emptyHint="No response to pick from yet — run this card once."
           className={`${inputClass} font-mono`}
         />
       )}
       {row.from === "header" && (
-        <input
+        <PathPicker
           value={row.header}
-          onChange={(e) => onChange({ ...row, header: e.target.value })}
+          onChange={(header) => onChange({ ...row, header })}
+          onPick={onPick}
+          options={headerOptions}
           placeholder="Location"
-          spellCheck={false}
+          emptyHint="No response to pick from yet — run this card once."
           className={`${inputClass} font-mono`}
         />
       )}
@@ -241,7 +322,15 @@ function SourceFields<T extends ValueSource>({ row, onChange }: { row: T; onChan
   );
 }
 
-function ExtractEditor({ rows, onChange }: { rows: Extraction[]; onChange: (rows: Extraction[]) => void }) {
+function ExtractEditor({
+  rows,
+  onChange,
+  shape,
+}: {
+  rows: Extraction[];
+  onChange: (rows: Extraction[]) => void;
+  shape: ResponseShape | null;
+}) {
   const update = (i: number, row: Extraction) => onChange(rows.map((r, j) => (j === i ? row : r)));
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
@@ -250,6 +339,7 @@ function ExtractEditor({ rows, onChange }: { rows: Extraction[]; onChange: (rows
         <code className="rounded bg-raised px-1 font-mono text-accent">{"{{name}}"}</code> in
         any later URL, header or body.
       </p>
+      <ShapeNote shape={shape} />
       {rows.map((row, i) => (
         <div key={i} className="flex flex-col gap-1.5 rounded border border-edge bg-ground p-2">
           <div className="flex items-center gap-2">
@@ -268,7 +358,18 @@ function ExtractEditor({ rows, onChange }: { rows: Extraction[]; onChange: (rows
           </div>
           <div className="flex items-center gap-2">
             <span className="w-8 shrink-0 text-right text-muted">from</span>
-            <SourceFields row={row} onChange={(r) => update(i, r)} />
+            <SourceFields
+              row={row}
+              onChange={(r) => update(i, r)}
+              shape={shape}
+              // A picked path names the variable too, unless one was typed already.
+              onPick={(entry) => {
+                if (!row.name.trim()) {
+                  const name = suggestName(entry.path);
+                  onChange(rows.map((r, j) => (j === i ? { ...r, name, ...(r.from === "body" ? { path: entry.path } : { header: entry.path }) } : r)));
+                }
+              }}
+            />
           </div>
         </div>
       ))}
@@ -282,7 +383,15 @@ function ExtractEditor({ rows, onChange }: { rows: Extraction[]; onChange: (rows
   );
 }
 
-function AssertEditor({ rows, onChange }: { rows: Assertion[]; onChange: (rows: Assertion[]) => void }) {
+function AssertEditor({
+  rows,
+  onChange,
+  shape,
+}: {
+  rows: Assertion[];
+  onChange: (rows: Assertion[]) => void;
+  shape: ResponseShape | null;
+}) {
   const update = (i: number, row: Assertion) => onChange(rows.map((r, j) => (j === i ? row : r)));
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
@@ -290,10 +399,32 @@ function AssertEditor({ rows, onChange }: { rows: Assertion[]; onChange: (rows: 
         What must hold for this step to pass. Any failing check fails the step, and every
         step after it is skipped.
       </p>
+      <ShapeNote shape={shape} />
       {rows.map((row, i) => (
         <div key={i} className="flex flex-col gap-1.5 rounded border border-edge bg-ground p-2">
           <div className="flex items-center gap-2">
-            <SourceFields row={row} onChange={(r) => update(i, r)} />
+            <SourceFields
+              row={row}
+              onChange={(r) => update(i, r)}
+              shape={shape}
+              // Picking a value from the response asserts it stays that way: equals, with
+              // what was found. A container can only be checked for presence.
+              onPick={(entry) =>
+                onChange(
+                  rows.map((r, j) =>
+                    j === i
+                      ? {
+                          ...r,
+                          ...(r.from === "body" ? { path: entry.path } : { header: entry.path }),
+                          ...(entry.scalar && entry.text
+                            ? { op: "equals" as Operator, expected: entry.text }
+                            : { op: "exists" as Operator, expected: "" }),
+                        }
+                      : r,
+                  ),
+                )
+              }
+            />
             <button onClick={() => onChange(rows.filter((_, j) => j !== i))} title="Remove" className={removeClass}>
               ✕
             </button>

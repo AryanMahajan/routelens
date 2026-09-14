@@ -53,8 +53,14 @@ of the same name. Sources: a body path (`access_token`, `user.id`, `items[0].nam
 header, the status, the raw body, or the duration. Scalars are extracted as plain text;
 objects and arrays as compact JSON, so a whole record can be re-sent as a body.
 
+You do not have to remember the response's shape: the path field's **⌄** lists every
+path in a real response with the value found there — this card's last run, or, before
+any run, the newest history entry for the same endpoint. Picking one fills the path and
+names the variable after it. The same list serves header names.
+
 **Assert** — what must hold for the step to pass. Every new card starts with
-`status < 400`. Operators: `==`, `!=`, `contains`, `not contains`, `exists`, `not exists`,
+`status < 400`. Picking a body path or header from the response fills in `equals` and
+the value as it is, so "keep it this way" is one click. Operators: `==`, `!=`, `contains`, `not contains`, `exists`, `not exists`,
 `>`, `<`. When both sides are numbers the comparison is numeric, so `200 == "200"` and
 `9 < 10`. The right-hand side may use `{{variables}}`.
 
