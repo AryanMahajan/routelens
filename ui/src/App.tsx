@@ -7,10 +7,15 @@ import {
   conditionNode,
   displayNode,
   emptyFlow,
+  emptyHistory,
   placeNew,
+  record,
+  redo,
   requestNode,
   runScope,
+  undo,
   variablesNode,
+  type History,
   type LiveState,
   type RunScope,
 } from "./flow";
@@ -60,6 +65,7 @@ interface FlowTab {
   /** The name the file on disk has, so a rename in the toolbar moves it on save. */
   savedName: string | null;
   selected: string | null;
+  history: History;
   live: LiveState;
   run: FlowRun | null;
   running: boolean;
@@ -89,6 +95,7 @@ function newFlowTab(flow: Flow, savedName: string | null): FlowTab {
     saved: JSON.stringify(flow),
     savedName,
     selected: null,
+    history: emptyHistory,
     live: {},
     run: null,
     running: false,
@@ -150,6 +157,50 @@ export default function App() {
   const updateFlowTab = useCallback((id: string, update: (tab: FlowTab) => FlowTab) => {
     setTabs((current) => current.map((t) => (t.id === id && t.kind === "flow" ? update(t) : t)));
   }, []);
+
+  /**
+   * Change a flow's document — the one way, so every edit lands in the undo history.
+   * `select` names the card to select afterwards; absent, the selection stands unless the
+   * card it named is gone.
+   */
+  const editFlow = useCallback(
+    (
+      id: string,
+      update: (flow: Flow, selected: string | null) => Flow | { flow: Flow; select: string | null },
+    ) => {
+      updateFlowTab(id, (t) => {
+        const result = update(t.flow, t.selected);
+        const flow = "nodes" in result ? result : result.flow;
+        if (flow === t.flow) return t;
+        const selected = "nodes" in result ? t.selected : result.select;
+        return {
+          ...t,
+          flow,
+          history: record(t.history, t.flow, Date.now()),
+          selected: selected && flow.nodes.some((n) => n.id === selected) ? selected : null,
+        };
+      });
+    },
+    [updateFlowTab],
+  );
+
+  function undoFlow(id: string) {
+    updateFlowTab(id, (t) => {
+      const step = undo(t.history, t.flow);
+      if (!step) return t;
+      const selected = t.selected && step.flow.nodes.some((n) => n.id === t.selected) ? t.selected : null;
+      return { ...t, flow: step.flow, history: step.history, selected };
+    });
+  }
+
+  function redoFlow(id: string) {
+    updateFlowTab(id, (t) => {
+      const step = redo(t.history, t.flow);
+      if (!step) return t;
+      const selected = t.selected && step.flow.nodes.some((n) => n.id === t.selected) ? t.selected : null;
+      return { ...t, flow: step.flow, history: step.history, selected };
+    });
+  }
 
   function replaceOrAppend(tab: Tab) {
     // A pristine blank request tab is replaced rather than left behind.
@@ -341,12 +392,12 @@ export default function App() {
   /** Wire a new node into a flow tab after its selected card, and select the new one. */
   const insertNode = useCallback(
     (tabId: string, build: (flow: Flow, selected: string | null) => { flow: Flow; id: string }) => {
-      updateFlowTab(tabId, (t) => {
-        const { flow, id } = build(t.flow, t.selected);
-        return { ...t, flow, selected: id };
+      editFlow(tabId, (flow, selected) => {
+        const built = build(flow, selected);
+        return { flow: built.flow, select: built.id };
       });
     },
-    [updateFlowTab],
+    [editFlow],
   );
 
   async function addEndpointToFlow(tabId: string, endpointId: string, at: Position | null) {
@@ -362,29 +413,36 @@ export default function App() {
     }
   }
 
-  function addToFlow(tab: FlowTab, pick: Pick) {
+  /**
+   * Add a step. From the toolbar it lands after the selected card, wired to it; from a
+   * right-click on the canvas (`at`) it lands where the pointer was, on its own.
+   */
+  function addToFlow(tab: FlowTab, pick: Pick, at: Position | null = null) {
     if (pick.kind === "endpoint") {
-      void addEndpointToFlow(tab.id, pick.endpoint.id, null);
+      void addEndpointToFlow(tab.id, pick.endpoint.id, at);
       return;
     }
     insertNode(tab.id, (flow, selected) => {
       // A variables block is the flow's input: it goes above the first card, unconnected,
       // so it runs before everything. The rest wire after the selected card as usual.
-      if (pick.kind === "variables") {
+      if (pick.kind === "variables" && !at) {
         const top = flow.nodes.length
           ? { x: Math.min(...flow.nodes.map((n) => n.position.x)), y: Math.min(...flow.nodes.map((n) => n.position.y)) - 160 }
           : { x: 80, y: 120 };
         const node = variablesNode(top);
         return { flow: addNode(flow, node), id: node.id };
       }
-      const position = placeNew(flow, selected);
+      const after = at ? null : selected;
+      const position = at ?? placeNew(flow, after);
       const node =
         pick.kind === "blank"
           ? requestNode({ ...emptyRequest(), url: "{{base_url}}/" }, position)
           : pick.kind === "display"
             ? displayNode(position)
-            : conditionNode(position);
-      return { flow: addNode(flow, node, selected ? { id: selected } : null), id: node.id };
+            : pick.kind === "variables"
+              ? variablesNode(position)
+              : conditionNode(position);
+      return { flow: addNode(flow, node, after ? { id: after } : null), id: node.id };
     });
   }
 
@@ -462,6 +520,14 @@ export default function App() {
       } else if (event.key.toLowerCase() === "b") {
         event.preventDefault();
         setSidebarCollapsed(!sidebarCollapsed);
+      } else if (tab?.kind === "flow" && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
+        // Inside a field the browser's own text undo is the right one; the flow's undo is
+        // for the canvas.
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("input, textarea, select, [contenteditable]")) return;
+        event.preventDefault();
+        if (event.key.toLowerCase() === "y" || event.shiftKey) redoFlow(tab.id);
+        else undoFlow(tab.id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -586,9 +652,13 @@ export default function App() {
               selected={active.selected}
               scan={scan}
               error={active.error}
-              onChange={(update) => updateFlowTab(active.id, (t) => ({ ...t, flow: update(t.flow) }))}
+              onChange={(update) => editFlow(active.id, update)}
               onSelect={(id) => updateFlowTab(active.id, (t) => (t.selected === id ? t : { ...t, selected: id }))}
-              onAdd={(pick) => addToFlow(active, pick)}
+              onAdd={(pick, at) => addToFlow(active, pick, at ?? null)}
+              canUndo={active.history.past.length > 0}
+              canRedo={active.history.future.length > 0}
+              onUndo={() => undoFlow(active.id)}
+              onRedo={() => redoFlow(active.id)}
               onDropEndpoint={(endpoint, position) => void addEndpointToFlow(active.id, endpoint, position)}
               onRun={(scope) => runFlow(active, scope)}
               onSave={() => saveFlow(active)}

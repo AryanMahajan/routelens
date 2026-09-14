@@ -25,9 +25,13 @@ import {
   removeEdges,
   removeNodes,
   type LiveState,
+  type RunScope,
 } from "../../flow";
 import type { Flow, FlowNode, Position as FlowPosition } from "../../flowTypes";
 import type { ScanResult, SourceView } from "../../types";
+import { api } from "../../api";
+import { ContextMenu, type ContextMenuItem } from "../ContextMenu";
+import type { Pick } from "./EndpointPicker";
 import { ConditionNode, DisplayNode, RequestNode, VariablesNode, type RfNode } from "./nodes";
 
 /** The MIME type an endpoint dragged out of the API panel carries. */
@@ -68,10 +72,40 @@ export interface FlowCanvasProps {
   onSelect: (id: string | null) => void;
   /** An endpoint from the API panel was dropped here. */
   onDropEndpoint: (endpointId: string, position: FlowPosition) => void;
+  /** The right-click menu's "add" entries: a new step where the pointer was. */
+  onAdd: (pick: Pick, at: FlowPosition) => void;
+  /** Null while a run is going. */
+  onRun: ((scope: RunScope) => void) | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
-function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint }: FlowCanvasProps) {
+/** What was right-clicked, and where. */
+type Menu =
+  | { kind: "pane"; x: number; y: number }
+  | { kind: "node"; x: number; y: number; id: string }
+  | { kind: "edge"; x: number; y: number; id: string };
+
+function Canvas({
+  flow,
+  live,
+  selected,
+  scan,
+  onChange,
+  onSelect,
+  onDropEndpoint,
+  onAdd,
+  onRun,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: FlowCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow();
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const [nodes, setNodes] = useState<RfNode[]>([]);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -215,6 +249,126 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
     [flow, onChange, say],
   );
 
+  /** Right-click on a card selects it — the menu acts on the selection, like everywhere else. */
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: RfNode) => {
+      event.preventDefault();
+      if (!node.selected) {
+        const next = nodesRef.current.map((n) => ({ ...n, selected: n.id === node.id }));
+        nodesRef.current = next;
+        setNodes(next);
+        onSelect(node.id);
+      }
+      setMenu({ kind: "node", x: event.clientX, y: event.clientY, id: node.id });
+    },
+    [onSelect],
+  );
+
+  const onPaneContextMenu = useCallback((event: React.MouseEvent | MouseEvent) => {
+    event.preventDefault();
+    setMenu({ kind: "pane", x: event.clientX, y: event.clientY });
+  }, []);
+
+  const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
+    event.preventDefault();
+    setMenu({ kind: "edge", x: event.clientX, y: event.clientY, id: edge.id });
+  }, []);
+
+  const duplicate = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      onChange((f) => {
+        const { flow: next, ids: copies } = duplicateNodes(f, ids);
+        window.setTimeout(() => {
+          setNodes((current) => current.map((n) => ({ ...n, selected: copies.includes(n.id) })));
+          onSelect(copies.length === 1 ? (copies[0] ?? null) : null);
+        }, 0);
+        return next;
+      });
+    },
+    [onChange, onSelect],
+  );
+
+  const menuItems = useMemo((): ContextMenuItem[] => {
+    if (!menu) return [];
+    if (menu.kind === "pane") {
+      const at = () => {
+        const p = screenToFlowPosition({ x: menu.x, y: menu.y });
+        return { x: Math.round(p.x), y: Math.round(p.y) };
+      };
+      return [
+        { label: "Add request here", onClick: () => onAdd({ kind: "blank" }, at()) },
+        { label: "Add condition here", onClick: () => onAdd({ kind: "condition" }, at()) },
+        { label: "Add variables here", onClick: () => onAdd({ kind: "variables" }, at()) },
+        { label: "Add display here", onClick: () => onAdd({ kind: "display" }, at()) },
+        { separator: true },
+        { label: "Undo", shortcut: "Ctrl+Z", disabled: !canUndo, onClick: onUndo },
+        { label: "Redo", shortcut: "Ctrl+Y", disabled: !canRedo, onClick: onRedo },
+        { separator: true },
+        {
+          label: "Run all",
+          shortcut: "Ctrl+Enter",
+          disabled: !onRun || flow.nodes.length === 0,
+          onClick: () => {
+            onSelect(null);
+            onRun?.("all");
+          },
+        },
+        {
+          label: "Select all",
+          shortcut: "Ctrl+A",
+          disabled: flow.nodes.length === 0,
+          onClick: () => setNodes((current) => current.map((n) => ({ ...n, selected: true }))),
+        },
+        { label: "Fit view", onClick: () => void fitView({ padding: 0.2, duration: 200 }) },
+      ];
+    }
+    if (menu.kind === "edge") {
+      return [
+        { label: "Delete connection", danger: true, onClick: () => onChange((f) => removeEdges(f, [menu.id])) },
+      ];
+    }
+    const node = flow.nodes.find((n) => n.id === menu.id);
+    if (!node) return [];
+    const wired = flow.edges.some((e) => e.from === node.id || e.to === node.id);
+    const source = sourceFor(node, scan);
+    const picked = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
+    const ids = picked.length > 1 && picked.includes(node.id) ? picked : [node.id];
+    const many = ids.length > 1;
+    return [
+      { label: "Run this card", shortcut: "Ctrl+Shift+Enter", disabled: !onRun || many, onClick: () => onRun?.("step") },
+      { label: wired ? "Run connected" : "Run selected", shortcut: "Ctrl+Enter", disabled: !onRun || many, onClick: () => onRun?.("connected") },
+      { separator: true },
+      {
+        label: many ? `Duplicate ${ids.length} cards` : "Duplicate",
+        shortcut: "Ctrl+D",
+        onClick: () => duplicate(ids),
+      },
+      {
+        label: many ? "Disconnect these" : "Disconnect",
+        disabled: !flow.edges.some((e) => ids.includes(e.from) || ids.includes(e.to)),
+        onClick: () =>
+          onChange((f) => ({
+            ...f,
+            edges: f.edges.filter((e) => !ids.includes(e.from) && !ids.includes(e.to)),
+          })),
+      },
+      ...(source
+        ? [{ label: `Open ${source.file.split("/").pop()}:${source.line}`, onClick: () => void api.revealInEditor(source.file, source.line).catch(() => {}) }]
+        : []),
+      { separator: true },
+      {
+        label: many ? `Delete ${ids.length} cards` : "Delete",
+        shortcut: "Del",
+        danger: true,
+        onClick: () => {
+          onChange((f) => removeNodes(f, ids));
+          if (selected && ids.includes(selected)) onSelect(null);
+        },
+      },
+    ];
+  }, [menu, flow, scan, selected, canUndo, canRedo, onAdd, onRun, onUndo, onRedo, onChange, onSelect, duplicate, fitView, screenToFlowPosition]);
+
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, _node: RfNode, dragged: RfNode[]) => {
       const positions: Record<string, FlowPosition> = {};
@@ -234,16 +388,7 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
         event.preventDefault();
-        const ids = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
-        if (ids.length === 0) return;
-        onChange((f) => {
-          const { flow: next, ids: copies } = duplicateNodes(f, ids);
-          window.setTimeout(() => {
-            setNodes((current) => current.map((n) => ({ ...n, selected: copies.includes(n.id) })));
-            onSelect(copies.length === 1 ? (copies[0] ?? null) : null);
-          }, 0);
-          return next;
-        });
+        duplicate(nodesRef.current.filter((n) => n.selected).map((n) => n.id));
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         event.preventDefault();
         setNodes((current) => current.map((n) => ({ ...n, selected: true })));
@@ -255,7 +400,7 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onChange, onSelect]);
+  }, [duplicate, onSelect]);
 
   return (
     <div
@@ -282,6 +427,9 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
         deleteKeyCode={["Delete", "Backspace"]}
         multiSelectionKeyCode={["Control", "Meta"]}
         selectionKeyCode="Shift"
@@ -321,6 +469,8 @@ function Canvas({ flow, live, selected, scan, onChange, onSelect, onDropEndpoint
           </div>
         </div>
       )}
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} />}
 
       {notice && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">

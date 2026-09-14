@@ -140,8 +140,9 @@ so nothing is retyped, and every card still knows the file and line that serves 
 - Flows are saved as readable YAML in `.routelogic/flows/` with the project, so they travel
   with the repository; every request a run sends lands in history, redacted.
 
-`Ctrl+Enter` runs, `Ctrl+S` saves, `Ctrl+D` duplicates, `Delete` deletes, `Ctrl+B` hides the
-sidebar when you want the whole screen for the canvas.
+`Ctrl+Enter` runs, `Ctrl+S` saves, `Ctrl+D` duplicates, `Delete` deletes, `Ctrl+Z` undoes,
+right-click for the rest, and `Ctrl+B` hides the sidebar when you want the whole screen for
+the canvas.
 
 Read [docs/flows.md](docs/flows.md) for the reference,
 [docs/flows-walkthrough.md](docs/flows-walkthrough.md) for a step-by-step build of a real

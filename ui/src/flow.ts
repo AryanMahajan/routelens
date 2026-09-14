@@ -294,6 +294,64 @@ export function upstreamVariables(flow: Flow, id: string): string[] {
   return [...names].sort();
 }
 
+// --- undo ------------------------------------------------------------------------------
+
+/**
+ * Undo history for one flow: the documents before each edit, and the ones undone.
+ *
+ * Edits arriving within a short window of each other are one step — typing a URL is one
+ * undo, not one per character — which is what `stamp` is for.
+ */
+export interface History {
+  past: Flow[];
+  future: Flow[];
+  /** When the last step was recorded, in ms. */
+  stamp: number;
+}
+
+export const HISTORY_LIMIT = 100;
+export const COALESCE_MS = 400;
+
+export const emptyHistory: History = { past: [], future: [], stamp: 0 };
+
+/**
+ * The document is about to change from `before`: remember it, and forget what was undone.
+ *
+ * Only edits that keep the same cards and connections merge with the previous step —
+ * keystrokes in a field, a value changed twice. Adding, removing or wiring a card is always
+ * its own step, however quickly it followed the last one.
+ */
+export function record(history: History, before: Flow, now: number): History {
+  const last = history.past.at(-1);
+  const merge = last !== undefined && now - history.stamp < COALESCE_MS && sameShape(last, before);
+  const past = merge ? history.past : [...history.past, before].slice(-HISTORY_LIMIT);
+  return { past, future: [], stamp: now };
+}
+
+function sameShape(a: Flow, b: Flow): boolean {
+  return (
+    a.nodes.length === b.nodes.length &&
+    a.edges.length === b.edges.length &&
+    a.nodes.every((n, i) => n.id === b.nodes[i]?.id && n.position === b.nodes[i]?.position) &&
+    a.edges.every((e, i) => edgeId(e) === edgeId(b.edges[i]!))
+  );
+}
+
+export function undo(history: History, current: Flow): { history: History; flow: Flow } | null {
+  const flow = history.past.at(-1);
+  if (!flow) return null;
+  return {
+    flow,
+    history: { past: history.past.slice(0, -1), future: [current, ...history.future], stamp: 0 },
+  };
+}
+
+export function redo(history: History, current: Flow): { history: History; flow: Flow } | null {
+  const [flow, ...future] = history.future;
+  if (!flow) return null;
+  return { flow, history: { past: [...history.past, current], future, stamp: 0 } };
+}
+
 // --- live run state ----------------------------------------------------------------------
 
 export type LiveStatus = "pending" | "running" | NodeStatus;

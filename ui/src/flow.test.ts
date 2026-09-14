@@ -5,19 +5,26 @@ import {
   applyEvent,
   conditionNode,
   connect,
+  COALESCE_MS,
   connectedComponent,
   displayNode,
   duplicateNodes,
   edgeId,
   edgeState,
   emptyFlow,
+  emptyHistory,
   hasCycle,
+  HISTORY_LIMIT,
+  moveNodes,
   nodeLabel,
   pathOf,
   placeNew,
+  record,
+  redo,
   removeNodes,
   requestNode,
   runScope,
+  undo,
   upstreamVariables,
   variablesNode,
   type LiveState,
@@ -244,5 +251,60 @@ describe("run state", () => {
     expect(edgeState(notTaken, live)).toBe("inactive");
     expect(edgeId(taken)).toBe("c|true|b");
     expect(flow.nodes).toEqual([]);
+  });
+
+  it("undo steps back through recorded edits, redo forward, and a new edit drops the redo stack", () => {
+    const v0 = emptyFlow("f");
+    const v1 = addNode(v0, get("{{base_url}}/a"));
+    const v2 = addNode(v1, get("{{base_url}}/b"));
+
+    let h = record(emptyHistory, v0, 1000);
+    h = record(h, v1, 2000);
+    expect(h.past).toEqual([v0, v1]);
+
+    const back = undo(h, v2)!;
+    expect(back.flow).toBe(v1);
+    expect(back.history.future).toEqual([v2]);
+    const further = undo(back.history, back.flow)!;
+    expect(further.flow).toBe(v0);
+    expect(undo(further.history, further.flow)).toBeNull();
+
+    const forward = redo(further.history, further.flow)!;
+    expect(forward.flow).toBe(v1);
+    expect(forward.history.past).toEqual([v0]);
+    expect(forward.history.future).toEqual([v2]);
+
+    // Editing after an undo: what was undone is gone for good.
+    const h2 = record(forward.history, forward.flow, 5000);
+    expect(h2.future).toEqual([]);
+    expect(redo(h2, v1)).toBeNull();
+  });
+
+  it("edits in quick succession are one undo step, and the history is bounded", () => {
+    const v0 = emptyFlow("f");
+    const v1 = { ...v0, name: "fl" };
+    const v2 = { ...v0, name: "flo" };
+    let h = record(emptyHistory, v0, 1000);
+    h = record(h, v1, 1000 + COALESCE_MS - 1);
+    h = record(h, v2, 1000 + COALESCE_MS * 2 - 2);
+    expect(h.past, "typing three characters is one step").toEqual([v0]);
+
+    h = record(h, v2, 10_000);
+    expect(h.past).toEqual([v0, v2]);
+
+    // Two cards added within the window are still two steps: the shape changed.
+    const w1 = addNode(v2, get("{{base_url}}/a"));
+    const w2 = addNode(w1, get("{{base_url}}/b"));
+    h = record(h, w1, 10_050);
+    h = record(h, w2, 10_100);
+    expect(h.past).toEqual([v0, v2, w1, w2]);
+    // A move ends once and is a step of its own even right after another edit.
+    const moved = moveNodes(w2, { [w2.nodes[0]!.id]: { x: 9, y: 9 } });
+    h = record(h, moved, 10_150);
+    expect(h.past.length).toBe(5);
+
+    for (let i = 0; i < HISTORY_LIMIT * 2; i++) h = record(h, { ...v0, name: `n${i}` }, 20_000 + i * 1000);
+    expect(h.past.length).toBe(HISTORY_LIMIT);
+    expect(h.past.at(-1)!.name).toBe(`n${HISTORY_LIMIT * 2 - 1}`);
   });
 });

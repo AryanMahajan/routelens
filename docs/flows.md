@@ -31,9 +31,16 @@ Connect cards by dragging from a right-hand handle to a left-hand one. Edges are
 | Delete | select, then `Delete` or `Backspace` |
 | Duplicate | `Ctrl+D` |
 | Select all · none | `Ctrl+A` · `Esc` |
+| Undo · redo | `Ctrl+Z` · `Ctrl+Y` (or `Ctrl+Shift+Z`), or ↶ ↷ in the toolbar |
+| Right-click | the background: add a card right there, undo/redo, run, fit view. A card: run it, run what it is wired to, duplicate, disconnect, open its source, delete. A connection: delete it |
 | Run | `Ctrl+Enter` or **▶ Run** — everything, or what is wired to the selected card |
 | Run one card | `Ctrl+Shift+Enter` or **▶ Step** in the inspector |
 | Save | `Ctrl+S` or **Save** |
+| `{{` anywhere | the variables in scope — or `Ctrl+Space` to open the list without typing |
+
+Undo covers everything done to the document: adding and deleting cards, connecting and
+moving them, and edits in the inspector. A burst of typing is one step. Inside a text field
+`Ctrl+Z` is the field's own undo, as usual; click the canvas first for the flow's.
 
 ## What a card is
 

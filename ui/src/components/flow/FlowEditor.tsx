@@ -40,6 +40,10 @@ export function FlowEditor({
   onDropEndpoint,
   onRun,
   onSave,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: {
   flow: Flow;
   live: LiveState;
@@ -50,11 +54,18 @@ export function FlowEditor({
   error: string | null;
   onChange: (update: FlowUpdate) => void;
   onSelect: (id: string | null) => void;
-  /** Add a node after the selected one: a discovered endpoint, a blank request, a condition. */
-  onAdd: (pick: Pick) => void;
+  /**
+   * Add a node after the selected one: a discovered endpoint, a blank request, a condition.
+   * With `at`, put it there instead — a right-click on the canvas.
+   */
+  onAdd: (pick: Pick, at?: Position) => void;
   onDropEndpoint: (endpoint: string, position: Position) => void;
   onRun: (scope: RunScope) => void;
   onSave: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [inspectorWidth, setInspectorWidth] = usePersistedNumber("routelogic.inspector.width", INSPECTOR_WIDTH);
@@ -84,6 +95,27 @@ export function FlowEditor({
           className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-2 py-1 font-semibold
             outline-none placeholder:text-muted/60 focus:border-edge focus:bg-panel"
         />
+
+        <span className="flex shrink-0 overflow-hidden rounded bg-raised">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            className="px-2 py-1 transition hover:brightness-125 disabled:opacity-40"
+            aria-label="Undo"
+          >
+            ↶
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Y)"
+            className="border-l border-edge px-2 py-1 transition hover:brightness-125 disabled:opacity-40"
+            aria-label="Redo"
+          >
+            ↷
+          </button>
+        </span>
 
         <div className="relative">
           <button
@@ -170,6 +202,12 @@ export function FlowEditor({
           onChange={onChange}
           onSelect={onSelect}
           onDropEndpoint={onDropEndpoint}
+          onAdd={onAdd}
+          onRun={running ? null : onRun}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={onUndo}
+          onRedo={onRedo}
         />
         {node && (
           <>
