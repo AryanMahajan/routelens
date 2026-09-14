@@ -1,7 +1,7 @@
 # Secrets
 
 Git-friendly storage plus bearer tokens is exactly how credentials end up committed. The
-original RouteLens specification did not mention secrets at all, which is why they are
+original RouteLogic specification did not mention secrets at all, which is why they are
 designed in from the start rather than bolted on later.
 
 The rule is simple: **secret values never enter a file that could be committed.**
@@ -12,7 +12,7 @@ An environment declares secret *names*. The committed file contains the names an
 else:
 
 ```yaml
-# .routelens/environments/local.yaml   — committed
+# .routelogic/environments/local.yaml   — committed
 version: 1
 name: local
 variables:
@@ -33,13 +33,13 @@ auth:
 Values live in the private tier:
 
 ```
-.routelens/local/secrets.json      # gitignored
+.routelogic/local/secrets.json      # gitignored
 ```
 
 or, preferably, in the OS keychain — Credential Manager on Windows, Keychain on macOS,
 Secret Service on Linux — with only a reference stored locally.
 
-`.routelens/.gitignore` is written automatically when the workspace is created, so `local/`
+`.routelogic/.gitignore` is written automatically when the workspace is created, so `local/`
 is excluded from the moment it exists.
 
 ## The `secret:` prefix is deliberate
@@ -73,7 +73,7 @@ the right default for short-lived access tokens, which are the common case.
 
 `scope: environment` persists a captured value, and it is treated as a secret from then on.
 
-## What RouteLens does not do
+## What RouteLogic does not do
 
 Stated plainly so the boundary is clear:
 
@@ -86,9 +86,9 @@ Stated plainly so the boundary is clear:
 
 ## Checklist for sharing a workspace
 
-Before committing `.routelens/` for the first time:
+Before committing `.routelogic/` for the first time:
 
-- [ ] `.routelens/.gitignore` exists and ignores `local/`
+- [ ] `.routelogic/.gitignore` exists and ignores `local/`
 - [ ] `git status` shows no `local/` contents
 - [ ] No literal tokens in your collections — search for `Bearer ` and `api_key`
 - [ ] Environment files list secret *names* only

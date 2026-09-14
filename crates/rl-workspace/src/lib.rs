@@ -1,10 +1,10 @@
 //! # rl-workspace
 //!
-//! Everything RouteLens puts on disk, split into three tiers by how the data should be
+//! Everything RouteLogic puts on disk, split into three tiers by how the data should be
 //! treated.
 //!
 //! ```text
-//! .routelens/
+//! .routelogic/
 //! ├── workspace.yaml       committed
 //! ├── collections/*.yaml   committed
 //! ├── environments/*.yaml  committed — secret NAMES only, never values
@@ -14,7 +14,7 @@
 //!     ├── secrets.json     private   — or an OS keychain reference
 //!     └── index.sqlite     disposable — rebuildable source index cache
 //!
-//! <user data dir>/routelens/   per user, every project
+//! <user data dir>/routelogic/   per user, every project
 //! ├── collections/*.yaml   saved requests
 //! └── history.sqlite       private — what was sent, across every project
 //! ```
@@ -31,9 +31,9 @@
 //! | Private — secret values | no | no, they are real credentials |
 //! | Disposable — history, index | no | yes, it rebuilds |
 //!
-//! `.routelens/.gitignore` is written at creation, and restored on open if it went missing.
+//! `.routelogic/.gitignore` is written at creation, and restored on open if it went missing.
 //! Git friendliness plus bearer tokens is exactly how credentials reach version control.
-//! The project's own `.gitignore` also gains a `.routelens` line on create and open —
+//! The project's own `.gitignore` also gains a `.routelogic` line on create and open —
 //! appended, never rewritten; created if absent — so the directory stays out of the repo.
 //!
 //! Committed files use sorted keys, so a diff reflects a real edit rather than serializer

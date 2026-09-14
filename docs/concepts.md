@@ -1,6 +1,6 @@
 # Concepts
 
-RouteLens has one internal model. Source code, cURL, OpenAPI, raw HTTP, and manual entry all
+RouteLogic has one internal model. Source code, cURL, OpenAPI, raw HTTP, and manual entry all
 resolve into it, so nothing downstream needs to know where a request came from.
 
 ```
@@ -69,7 +69,7 @@ enum PathSegment {
 }
 ```
 
-`Unresolved` is the load-bearing one. When RouteLens cannot statically determine a segment —
+`Unresolved` is the load-bearing one. When RouteLogic cannot statically determine a segment —
 a prefix read from settings, a value computed at import time — it records the source
 expression and marks the segment unresolved. The UI displays the gap.
 

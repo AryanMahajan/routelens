@@ -79,9 +79,9 @@ jobs:
         with:
           # On a manual run there is no tag; fall back to the version in tauri.conf.json.
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
-          releaseName: RouteLens ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
+          releaseName: RouteLogic ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
           releaseBody: |
-            Unsigned build — RouteLens is free and open source, and code-signing certificates
+            Unsigned build — RouteLogic is free and open source, and code-signing certificates
             are not. Your OS will warn before the first launch:
 
             - **Windows:** SmartScreen — click *More info* → *Run anyway*.
@@ -89,7 +89,7 @@ jobs:
               *System Settings → Privacy & Security*.
             - **Linux:** `chmod +x` the AppImage, or install the `.deb` / `.rpm`.
 
-            See the [getting started guide](https://github.com/AryanMahajan/routelens/blob/main/docs/getting-started.md).
+            See the [getting started guide](https://github.com/AryanMahajan/routelogic/blob/main/docs/getting-started.md).
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}

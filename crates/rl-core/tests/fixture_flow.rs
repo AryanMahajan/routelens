@@ -1,7 +1,7 @@
 //! The sample flow shipped for the FastAPI fixture stays runnable: it parses, it validates,
 //! and every step built from a discovered endpoint names one the scan actually finds.
 
-use rl_core::RouteLens;
+use rl_core::RouteLogic;
 use rl_model::{Flow, NodeKind};
 use rl_workspace::WorkspaceKind;
 use std::path::PathBuf;
@@ -20,10 +20,10 @@ fn the_sample_flow_matches_the_fixture_api() {
     let flow: Flow = yaml_serde::from_str(&text).unwrap();
     flow.validate().unwrap();
 
-    // Scan from a throwaway copy of the workspace so the fixture's own `.routelens/` — the
+    // Scan from a throwaway copy of the workspace so the fixture's own `.routelogic/` — the
     // one a developer plays with — is never touched by a test.
     let home = tempfile::TempDir::new().unwrap();
-    let mut app = RouteLens::with_data_dir(home.path().join("data"));
+    let mut app = RouteLogic::with_data_dir(home.path().join("data"));
     let root = tempfile::TempDir::new().unwrap();
     copy_dir(&fixture().join("app"), &root.path().join("app"));
     for file in ["Procfile", "requirements.txt"] {
@@ -51,8 +51,8 @@ fn the_sample_flow_matches_the_fixture_api() {
     );
 
     // With the fixture app running — `uvicorn app.main:app --port 9000` in the fixture
-    // directory — and ROUTELENS_FIXTURE_URL=http://localhost:9000, run the flow for real.
-    let Ok(base_url) = std::env::var("ROUTELENS_FIXTURE_URL") else {
+    // directory — and ROUTELOGIC_FIXTURE_URL=http://localhost:9000, run the flow for real.
+    let Ok(base_url) = std::env::var("ROUTELOGIC_FIXTURE_URL") else {
         return;
     };
     let mut env = rl_workspace::Environment::new("local");

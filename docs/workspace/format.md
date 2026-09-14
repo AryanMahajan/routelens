@@ -1,12 +1,16 @@
 # Workspace format
 
-What belongs to a *project* lands in its `.routelens/` directory, split into three tiers by
+> Renamed from RouteLens: a project's `.routelens/` and the per-user `routelens/` data
+> directory are moved to `.routelogic/` and `routelogic/` the first time the new version
+> opens them, contents intact. Nothing to do by hand.
+
+What belongs to a *project* lands in its `.routelogic/` directory, split into three tiers by
 how the data should be treated: shared, private, and disposable. What belongs to *you* —
 saved requests and request history — lives in your user data directory and is the same
 whichever project is open.
 
 ```
-.routelens/                   # in the project
+.routelogic/                   # in the project
 ├── workspace.yaml            # committed — workspace identity and settings
 ├── environments/
 │   ├── local.yaml            # committed — variable names, non-secret values
@@ -16,28 +20,28 @@ whichever project is open.
 ├── .gitignore                # committed — ignores local/
 └── local/                    # never committed
     ├── secrets.json          # secret values (or an OS keychain reference)
-    ├── routelens_enrich.py   # the runtime-enrich helper, rewritten before each run
+    ├── routelogic_enrich.py   # the runtime-enrich helper, rewritten before each run
     └── index.sqlite          # source index cache — disposable, rebuildable
 
-<user data dir>/routelens/    # per user, every project
+<user data dir>/routelogic/    # per user, every project
 ├── collections/
 │   └── users.yaml            # saved requests
 └── history.sqlite            # request history — private, redacted
 ```
 
-The user data directory is `%LOCALAPPDATA%\routelens` on Windows,
-`~/.local/share/routelens` on Linux and `~/Library/Application Support/routelens` on macOS;
-`ROUTELENS_HOME` overrides it. A workspace from before collections and history were
-per-user has its `.routelens/collections/` and `.routelens/local/history.sqlite` moved there
+The user data directory is `%LOCALAPPDATA%\routelogic` on Windows,
+`~/.local/share/routelogic` on Linux and `~/Library/Application Support/routelogic` on macOS;
+`ROUTELOGIC_HOME` overrides it. A workspace from before collections and history were
+per-user has its `.routelogic/collections/` and `.routelogic/local/history.sqlite` moved there
 the first time it is opened (the history only if no per-user database exists yet).
 
-RouteLens writes `.routelens/.gitignore` automatically on workspace creation, so the private
+RouteLogic writes `.routelogic/.gitignore` automatically on workspace creation, so the private
 tier is excluded from the moment it exists rather than after someone notices.
 
-It also adds a `.routelens` line to the **project's own** `.gitignore` every time a workspace
+It also adds a `.routelogic` line to the **project's own** `.gitignore` every time a workspace
 is created or opened — appended to an existing file without touching any other line, or
 written as a new file if the project has none. A rule that already covers the directory in
-any spelling (`.routelens`, `.routelens/`, `/.routelens/`) is left as it is. Remove the line
+any spelling (`.routelogic`, `.routelogic/`, `/.routelogic/`) is left as it is. Remove the line
 if you decide to commit environments after all; it is only added back if no rule is present.
 
 ## Why three tiers

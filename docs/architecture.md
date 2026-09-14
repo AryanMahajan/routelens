@@ -3,7 +3,7 @@
 ## Shape
 
 ```
-                        RouteLens
+                        RouteLogic
                             │
               ┌─────────────┴─────────────┐
               │                           │
@@ -30,7 +30,7 @@
 A Cargo workspace, with the core split into libraries and Tauri as a shell.
 
 ```
-routelens/
+routelogic/
 ├── crates/
 │   ├── rl-model/         # unified model + variable resolver — no I/O
 │   ├── rl-discovery/     # project detect, source index, registration graph, adapters
@@ -120,7 +120,7 @@ total ship first and the breakdown is refined afterwards.
 
 ```
 UI  →  rl-core.open_project(path)
-       rl-workspace   load or create .routelens/
+       rl-workspace   load or create .routelogic/
        rl-discovery   detect → index → graph → resolve → extract → infer base URL
        rl-core        merge with any stored runtime results
     →  EndpointSpec[]  →  UI tree

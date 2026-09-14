@@ -31,7 +31,7 @@ import type { ScanResult, SourceView } from "../../types";
 import { ConditionNode, DisplayNode, RequestNode, VariablesNode, type RfNode } from "./nodes";
 
 /** The MIME type an endpoint dragged out of the API panel carries. */
-export const ENDPOINT_DRAG_TYPE = "application/x-routelens-endpoint";
+export const ENDPOINT_DRAG_TYPE = "application/x-routelogic-endpoint";
 
 const nodeTypes = {
   request: RequestNode,

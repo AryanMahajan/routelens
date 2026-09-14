@@ -12,7 +12,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("RouteLens UI crashed", error, info.componentStack);
+    console.error("RouteLogic UI crashed", error, info.componentStack);
   }
 
   render() {

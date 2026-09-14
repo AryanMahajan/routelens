@@ -1,13 +1,13 @@
 //! The desktop shell.
 //!
 //! Command wrappers, state, and filesystem scope. **No logic** — every command here is a thin
-//! call into [`rl_core::RouteLens`].
+//! call into [`rl_core::RouteLogic`].
 //!
 //! That rule is what keeps discovery and the request engine testable with a plain
 //! `cargo test`, with no GUI harness in the loop. If a command in this file starts making
 //! decisions, the decision belongs in `rl-core` instead.
 
-use rl_core::{EnrichProposal, ProjectScan, RouteLens, SaveAllReport, WorkspaceInfo};
+use rl_core::{EnrichProposal, ProjectScan, RouteLogic, SaveAllReport, WorkspaceInfo};
 use rl_flow::{FlowEvent, FlowRun, RunOptions};
 use rl_http::Exchange;
 use rl_model::{Flow, RequestDraft};
@@ -20,10 +20,10 @@ use tokio::sync::Mutex;
 
 /// Application state.
 ///
-/// A `tokio` mutex rather than a `std` one because [`RouteLens::send`] is async and the guard
+/// A `tokio` mutex rather than a `std` one because [`RouteLogic::send`] is async and the guard
 /// is held across an await point.
 struct AppState {
-    app: Mutex<RouteLens>,
+    app: Mutex<RouteLogic>,
 }
 
 /// An error on its way to the UI.
@@ -407,7 +407,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            app: Mutex::new(RouteLens::new()),
+            app: Mutex::new(RouteLogic::new()),
         })
         .invoke_handler(tauri::generate_handler![
             open_workspace,
@@ -449,5 +449,5 @@ pub fn run() {
             import_openapi,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running RouteLens");
+        .expect("error while running RouteLogic");
 }

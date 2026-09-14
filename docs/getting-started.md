@@ -5,7 +5,7 @@
 ## Install a release
 
 Every tagged version has installers on the
-[Releases](https://github.com/AryanMahajan/routelens/releases) page: an `.exe`/`.msi` for
+[Releases](https://github.com/AryanMahajan/routelogic/releases) page: an `.exe`/`.msi` for
 Windows, a universal `.dmg` for macOS (Apple Silicon and Intel), and an AppImage/`.deb`/`.rpm` for
 Linux.
 
@@ -15,7 +15,7 @@ The builds are **unsigned**, so the first launch is met with a warning:
 |---|---|---|
 | Windows | SmartScreen: "Windows protected your PC" | **More info → Run anyway** |
 | macOS | "cannot be opened because the developer cannot be verified" | **Right-click → Open → Open**, or **System Settings → Privacy & Security → Open Anyway** |
-| Linux | AppImage is not executable | `chmod +x RouteLens_*.AppImage` |
+| Linux | AppImage is not executable | `chmod +x RouteLogic_*.AppImage` |
 
 The warning appears once per install. Signing will come when the project can afford
 certificates; until then, the alternative is to build from source below.
@@ -23,8 +23,8 @@ certificates; until then, the alternative is to build from source below.
 ## Run from source
 
 ```bash
-git clone https://github.com/AryanMahajan/routelens.git
-cd routelens
+git clone https://github.com/AryanMahajan/routelogic.git
+cd routelogic
 npm install && npm install --prefix ui
 npm run tauri dev                  # development build, hot-reloading UI
 npm run tauri build                # the same installer the release workflow produces
@@ -40,7 +40,7 @@ prerequisites — WebView2 on Windows, `webkit2gtk` on Linux, Xcode command line
 
 ## Open a project
 
-Choose **Open Project** and select a repository root. RouteLens will:
+Choose **Open Project** and select a repository root. RouteLogic will:
 
 1. Detect the language and framework from manifests and imports.
 2. Scan the source for route registrations.
@@ -51,7 +51,7 @@ Choose **Open Project** and select a repository root. RouteLens will:
 A first scan of a mid-sized project should complete in well under a second; rescans are
 incremental and near-instant.
 
-RouteLens only reads files inside the directory you selected, and it does not execute your
+RouteLogic only reads files inside the directory you selected, and it does not execute your
 project's code unless you explicitly ask for [runtime enrich](discovery/runtime-enrich.md).
 
 ## Read an endpoint
@@ -90,13 +90,13 @@ source locations kept, and every difference labelled — `RT` for a route only t
 application knows about, `✓` for a gap the application closed, `∅` for something declared
 in source that the application does not serve.
 
-The target is remembered in `.routelens/workspace.yaml`; **Forget** in the dialog withdraws
+The target is remembered in `.routelogic/workspace.yaml`; **Forget** in the dialog withdraws
 it. Rescanning returns to the static result. Details in
 [runtime enrich](discovery/runtime-enrich.md).
 
 ## Send a request
 
-1. Pick a base URL — RouteLens suggests candidates it found; you can override it.
+1. Pick a base URL — RouteLogic suggests candidates it found; you can override it.
 2. Fill in path parameters. Adjust query, headers, and body as needed.
 3. Set auth, or reference an environment variable such as `{{token}}`.
 4. **Send.**
@@ -109,7 +109,7 @@ raw, or saved to a file for large payloads.
 **Save** (Ctrl+S) writes the request into a collection — the box next to the button names
 which; type a new name to create one. A request opened from a collection saves back to it.
 Collections are yours, not the project's: they live in your user data directory
-(`%LOCALAPPDATA%\routelens\collections` on Windows, `~/.local/share/routelens/collections`
+(`%LOCALAPPDATA%\routelogic\collections` on Windows, `~/.local/share/routelogic/collections`
 on Linux) and the same list appears in every project you open. Environments, secrets and
 history stay with the project.
 
@@ -129,10 +129,10 @@ curl 'https://api.example.com/users?page=2' \
   --data-raw '{"name":"Aryan"}'
 ```
 
-RouteLens splits this into method, URL, query parameters, headers, recognised auth, and body
+RouteLogic splits this into method, URL, query parameters, headers, recognised auth, and body
 automatically — you never sort the pieces by hand. See [import](import.md).
 
 ## Work without a project
 
-Choose **New Workspace** to use RouteLens as a standalone API client — collections,
+Choose **New Workspace** to use RouteLogic as a standalone API client — collections,
 environments, variables, and history, with no project attached.

@@ -4,10 +4,10 @@
 #   pip install -r requirements.txt
 #   uvicorn app.main:app --port 9000
 #
-# Open that directory in RouteLens, set the `local` environment's base_url to
+# Open that directory in RouteLogic, set the `local` environment's base_url to
 # http://localhost:9000 (the scan suggests it from the Procfile), add the secret
 # `api_token` = letmein in the {{ }} dialog, then copy this file to
-# tests/fixtures/fastapi/.routelens/flows/ and it appears under Flows.
+# tests/fixtures/fastapi/.routelogic/flows/ and it appears under Flows.
 #
 #   inputs (runs first)
 #   health ─▶ create user ─▶ fetch it ─▶ if new ─true─▶ delete ─▶ gone? ─▶ summary

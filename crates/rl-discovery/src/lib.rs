@@ -21,7 +21,7 @@
 //! written once rather than once per framework. If an adapter starts joining paths itself,
 //! the abstraction has sprung a leak.
 //!
-//! [enrich]: https://github.com/AryanMahajan/routelens/blob/main/docs/discovery/runtime-enrich.md
+//! [enrich]: https://github.com/AryanMahajan/routelogic/blob/main/docs/discovery/runtime-enrich.md
 //!
 //! Status: P5 complete — FastAPI, Flask, Next.js and Express adapters over one graph, with
 //! Python and JavaScript/TypeScript module resolution, plus opt-in runtime enrich for the

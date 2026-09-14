@@ -145,6 +145,7 @@ impl Workspace {
 
     /// [`Workspace::open`] with an explicit layout.
     pub fn open_in(layout: Layout) -> Result<Self> {
+        migrate_renamed_dirs(&layout)?;
         let path = layout.manifest();
         if !path.is_file() {
             return Err(WorkspaceError::NotFound(layout.dir()));
@@ -364,7 +365,7 @@ fn write_yaml<T: Serialize>(path: &Path, value: &T, what: &str) -> Result<()> {
     write_file(path, &text)
 }
 
-/// Make sure the project's own `.gitignore` excludes `.routelens/`.
+/// Make sure the project's own `.gitignore` excludes `.routelogic/`.
 ///
 /// Nothing else in the file is touched: an existing `.gitignore` gets one line appended
 /// (after a newline if the file does not already end with one), and a missing one is
@@ -378,7 +379,7 @@ fn ensure_project_gitignore(layout: &Layout) -> Result<()> {
         Err(e) => return Err(WorkspaceError::io(format!("reading {}", path.display()), e)),
     };
 
-    if ignores_routelens(&existing) {
+    if ignores_routelogic(&existing) {
         return Ok(());
     }
 
@@ -391,9 +392,9 @@ fn ensure_project_gitignore(layout: &Layout) -> Result<()> {
     write_file(&path, &text)
 }
 
-/// Whether a `.gitignore` already has a rule for the `.routelens` directory — in any of the
-/// spellings git accepts for it, so a hand-written `/.routelens/` is not duplicated.
-fn ignores_routelens(gitignore: &str) -> bool {
+/// Whether a `.gitignore` already has a rule for the `.routelogic` directory — in any of the
+/// spellings git accepts for it, so a hand-written `/.routelogic/` is not duplicated.
+fn ignores_routelogic(gitignore: &str) -> bool {
     gitignore.lines().any(|line| {
         let rule = line.trim();
         if rule.starts_with('#') {
@@ -431,7 +432,27 @@ fn list_names(dir: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Move a history database left under the project's `.routelens/local/` — where it lived
+/// Carry a workspace and a data directory written under the project's old name over to the
+/// new one: `.routelens/` becomes `.routelogic/`, and `<data dir>/routelens` becomes
+/// `<data dir>/routelogic`. Each only when nothing exists under the new name yet — two
+/// directories cannot be merged blindly, and the newer one is the one in use.
+fn migrate_renamed_dirs(layout: &Layout) -> Result<()> {
+    let mut moves = vec![(layout.legacy_dir(), layout.dir())];
+    if let Some(legacy) = layout.legacy_data_dir() {
+        moves.push((legacy, layout.data_dir().to_path_buf()));
+    }
+    for (from, to) in moves {
+        if !from.is_dir() || to.exists() {
+            continue;
+        }
+        std::fs::rename(&from, &to).map_err(|e| {
+            WorkspaceError::io(format!("moving {} to {}", from.display(), to.display()), e)
+        })?;
+    }
+    Ok(())
+}
+
+/// Move a history database left under the project's `.routelogic/local/` — where it lived
 /// before history became per-user — into the user's data directory.
 ///
 /// Only when there is no per-user database yet: two SQLite files cannot simply be merged,
@@ -459,7 +480,7 @@ fn migrate_history(layout: &Layout) -> Result<()> {
     }
 }
 
-/// Move collections saved under the project's `.routelens/collections/` — where they lived
+/// Move collections saved under the project's `.routelogic/collections/` — where they lived
 /// before becoming per-user — into the user's data directory.
 ///
 /// A file whose name already exists there is left where it is rather than overwritten,
@@ -550,14 +571,14 @@ mod tests {
 
         // A workspace from before collections were per-user carries them along on open.
         let old = dir.path().join("old");
-        std::fs::create_dir_all(old.join(".routelens/collections")).unwrap();
+        std::fs::create_dir_all(old.join(".routelogic/collections")).unwrap();
         std::fs::write(
-            old.join(".routelens/workspace.yaml"),
+            old.join(".routelogic/workspace.yaml"),
             "version: 1\nname: old\n",
         )
         .unwrap();
         std::fs::write(
-            old.join(".routelens/collections/Legacy.yaml"),
+            old.join(".routelogic/collections/Legacy.yaml"),
             "version: 1\nname: Legacy\nrequests: []\n",
         )
         .unwrap();
@@ -567,13 +588,13 @@ mod tests {
             vec!["Legacy", "Shared"]
         );
         assert!(
-            !old.join(".routelens/collections").exists(),
+            !old.join(".routelogic/collections").exists(),
             "moved, not copied"
         );
     }
 
     /// History follows the user: what was sent from one project is listed in another, and
-    /// a database left behind by an older RouteLens is picked up on open.
+    /// a database left behind by an older RouteLogic is picked up on open.
     #[test]
     fn history_is_shared_across_projects_and_migrated_from_older_workspaces() {
         use crate::history::{History, NewEntry};
@@ -648,11 +669,42 @@ mod tests {
         );
     }
 
+    /// A project and a data directory written before the rename are picked up under the
+    /// new names, and nothing is left behind under the old ones.
     #[test]
-    fn creation_adds_routelens_to_a_missing_project_gitignore() {
+    fn a_workspace_written_under_the_old_name_is_moved_to_the_new_one_on_open() {
+        let home = tempfile::tempdir().unwrap();
+        let project = home.path().join("project");
+        let data = home.path().join("data").join("routelogic");
+        let old_data = home.path().join("data").join("routelens");
+
+        std::fs::create_dir_all(project.join(".routelens/flows")).unwrap();
+        std::fs::write(
+            project.join(".routelens/workspace.yaml"),
+            "version: 1\nname: old\n",
+        )
+        .unwrap();
+        std::fs::write(project.join(".routelens/flows/smoke.yaml"), "name: smoke\n").unwrap();
+        std::fs::create_dir_all(old_data.join("collections")).unwrap();
+        std::fs::write(old_data.join("collections/Kept.yaml"), "name: Kept\n").unwrap();
+
+        let layout = Layout::with_data_dir(&project, &data);
+        assert!(layout.exists(), "the old name still counts as a workspace");
+        let workspace = Workspace::open_in(layout).unwrap();
+
+        assert_eq!(workspace.manifest().name, "old");
+        assert!(project.join(".routelogic/flows/smoke.yaml").is_file());
+        assert!(!project.join(".routelens").exists());
+        assert!(data.join("collections/Kept.yaml").is_file());
+        assert!(!old_data.exists());
+        assert_eq!(workspace.flow_names().unwrap(), vec!["smoke".to_string()]);
+    }
+
+    #[test]
+    fn creation_adds_routelogic_to_a_missing_project_gitignore() {
         let (_dir, ws) = workspace();
         let text = std::fs::read_to_string(ws.layout().project_gitignore()).unwrap();
-        assert_eq!(text, ".routelens\n");
+        assert_eq!(text, ".routelogic\n");
     }
 
     #[test]
@@ -664,12 +716,17 @@ mod tests {
         Workspace::create_in(isolated(dir.path()), "demo", WorkspaceKind::Project).unwrap();
 
         let text = std::fs::read_to_string(&gitignore).unwrap();
-        assert_eq!(text, "node_modules/\n*.log\n.routelens\n");
+        assert_eq!(text, "node_modules/\n*.log\n.routelogic\n");
     }
 
     #[test]
-    fn a_project_gitignore_that_already_ignores_routelens_is_left_alone() {
-        for spelling in [".routelens", ".routelens/", "/.routelens", "/.routelens/"] {
+    fn a_project_gitignore_that_already_ignores_routelogic_is_left_alone() {
+        for spelling in [
+            ".routelogic",
+            ".routelogic/",
+            "/.routelogic",
+            "/.routelogic/",
+        ] {
             let dir = TempDir::new().unwrap();
             let gitignore = dir.path().join(".gitignore");
             let original = format!("dist/\n{spelling}\n");
@@ -693,7 +750,7 @@ mod tests {
         Workspace::open_in(isolated(dir.path())).unwrap();
 
         let text = std::fs::read_to_string(ws.layout().project_gitignore()).unwrap();
-        assert_eq!(text, "# nothing\n.routelens\n");
+        assert_eq!(text, "# nothing\n.routelogic\n");
     }
 
     #[test]

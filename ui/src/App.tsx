@@ -119,8 +119,8 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   // The sidebar's size is a per-machine preference: a wide screen wants more of the API
   // tree, a laptop wants the canvas.
-  const [sidebarWidth, setSidebarWidth] = usePersistedNumber("routelens.sidebar.width", SIDEBAR_WIDTH);
-  const [sidebarCollapsed, setSidebarCollapsed] = usePersistedFlag("routelens.sidebar.collapsed", false);
+  const [sidebarWidth, setSidebarWidth] = usePersistedNumber("routelogic.sidebar.width", SIDEBAR_WIDTH);
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistedFlag("routelogic.sidebar.collapsed", false);
 
   // Anything that wrote to the workspace: reload the collection/environment names as
   // well as the panels, or a collection created just now is never listed.

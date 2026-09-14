@@ -1,10 +1,12 @@
-# ---- RouteLens ----
+# ---- RouteLogic ----
 
 # Internal working notes: thinking-in-progress, not promises.
 docs/internal/
 
 # Local workspace tier: secrets, history, rebuildable caches.
-.routelens/local/
+.routelogic/local/
+# Workspaces written under the old name, before the rename to RouteLogic.
+.routelens/
 
 # ---- Rust ----
 /target/
@@ -36,6 +38,7 @@ desktop.ini
 !.env.example
 
 # Workspaces created by opening a fixture in the app while testing.
+tests/fixtures/**/.routelogic/
 tests/fixtures/**/.routelens/
 
 

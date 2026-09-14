@@ -9,7 +9,7 @@ from .config import settings
 
 API_V1 = "/api/v1"
 
-app = FastAPI(title="RouteLens fixture")
+app = FastAPI(title="RouteLogic fixture")
 
 app.include_router(users_router, prefix=API_V1)
 app.include_router(items_router, prefix="/v1")

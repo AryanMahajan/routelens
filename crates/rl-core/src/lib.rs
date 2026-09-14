@@ -28,7 +28,7 @@
 //!
 //! ## The send path
 //!
-//! [`RouteLens::send`] is where the crates meet, and the order matters:
+//! [`RouteLogic::send`] is where the crates meet, and the order matters:
 //!
 //! 1. Assemble variables from the workspace's three tiers.
 //! 2. Resolve `{{variables}}` — as late as possible, so a plaintext secret exists briefly.
@@ -40,7 +40,7 @@
 //!
 //! ## Flows
 //!
-//! A flow run is the same path, once per node, driven by `rl-flow`. [`RouteLens::prepare_flow`]
+//! A flow run is the same path, once per node, driven by `rl-flow`. [`RouteLogic::prepare_flow`]
 //! captures what a run needs — the engine, the active environment's variables, a history
 //! handle — into a [`PreparedFlow`] that runs *without* the application lock, so the UI stays
 //! usable while a long flow is in progress. Every request the flow sends lands in history,
@@ -178,7 +178,7 @@ fn is_enrichable(result: &ScanResult) -> bool {
         .any(|f| ENRICHABLE_FRAMEWORKS.contains(&f.id.as_str()))
 }
 
-/// What [`RouteLens::save_scan_as_collection`] did.
+/// What [`RouteLogic::save_scan_as_collection`] did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SaveAllReport {
     pub added: usize,
@@ -232,7 +232,7 @@ fn to_view(spec: &rl_model::EndpointSpec) -> EndpointView {
 
 /// The application.
 #[derive(Debug)]
-pub struct RouteLens {
+pub struct RouteLogic {
     /// Where per-user state — collections — lives. The user's data directory, or a
     /// temporary one under test.
     data_dir: PathBuf,
@@ -246,20 +246,20 @@ pub struct RouteLens {
     last_enrich: Option<EnrichReport>,
 }
 
-impl Default for RouteLens {
+impl Default for RouteLogic {
     fn default() -> Self {
-        RouteLens::with_data_dir(rl_workspace::default_data_dir())
+        RouteLogic::with_data_dir(rl_workspace::default_data_dir())
     }
 }
 
-impl RouteLens {
+impl RouteLogic {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// An application whose per-user state lives under `data_dir`.
     pub fn with_data_dir(data_dir: impl Into<PathBuf>) -> Self {
-        RouteLens {
+        RouteLogic {
             data_dir: data_dir.into(),
             workspace: None,
             active_environment: None,
@@ -710,9 +710,9 @@ impl RouteLens {
 
     /// Run runtime enrich. **This executes the project's code.**
     ///
-    /// The caller must have shown [`RouteLens::enrich_proposal`] and been told yes; the
+    /// The caller must have shown [`RouteLogic::enrich_proposal`] and been told yes; the
     /// target is then recorded in `workspace.yaml` as the standing consent, which
-    /// [`RouteLens::revoke_enrich`] withdraws. The static scan is merged with the result
+    /// [`RouteLogic::revoke_enrich`] withdraws. The static scan is merged with the result
     /// and becomes the scan the UI works from — source locations included.
     pub fn run_enrich(&mut self, target: &str, interpreter: Option<&Path>) -> Result<ProjectScan> {
         let proposal = self.enrich_proposal()?;
@@ -1003,7 +1003,7 @@ impl RouteLens {
     }
 }
 
-/// A flow about to run. See [`RouteLens::prepare_flow`].
+/// A flow about to run. See [`RouteLogic::prepare_flow`].
 pub struct PreparedFlow {
     flow: Flow,
     options: RunOptions,
@@ -1162,15 +1162,15 @@ mod tests {
     /// A throwaway per-user data directory, so tests never touch the real one.
     fn data_dir() -> PathBuf {
         let dir = TempDir::new().unwrap();
-        // Kept alive by leaking: the directory must outlive the `RouteLens` using it.
+        // Kept alive by leaking: the directory must outlive the `RouteLogic` using it.
         let path = dir.path().to_path_buf();
         std::mem::forget(dir);
         path
     }
 
-    fn app() -> (TempDir, RouteLens) {
+    fn app() -> (TempDir, RouteLogic) {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "test", WorkspaceKind::Project)
             .unwrap();
         (dir, app)
@@ -1187,7 +1187,7 @@ mod tests {
 
     #[test]
     fn operations_without_a_workspace_are_refused_clearly() {
-        let app = RouteLens::with_data_dir(data_dir());
+        let app = RouteLogic::with_data_dir(data_dir());
         assert!(matches!(app.info(), Err(CoreError::NoWorkspace)));
         assert!(matches!(
             app.collection_names(),
@@ -1212,7 +1212,7 @@ mod tests {
     #[test]
     fn a_new_workspace_gets_a_local_environment_that_is_remembered() {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         let info = app
             .create_workspace(dir.path(), "t", WorkspaceKind::Standalone)
             .unwrap();
@@ -1224,7 +1224,7 @@ mod tests {
         app.save_environment(&staging).unwrap();
         app.set_active_environment(Some("staging")).unwrap();
 
-        let mut reopened = RouteLens::with_data_dir(data_dir());
+        let mut reopened = RouteLogic::with_data_dir(data_dir());
         let info = reopened.open_workspace(dir.path()).unwrap();
         assert_eq!(info.active_environment.as_deref(), Some("staging"));
 
@@ -1309,7 +1309,7 @@ mod tests {
     #[test]
     fn the_whole_scan_saves_as_a_collection_filed_by_group() {
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
         assert!(matches!(
@@ -1665,7 +1665,7 @@ connection: close
     }
 
     /// A workspace with a small FastAPI project inside it.
-    fn project_workspace() -> (TempDir, RouteLens) {
+    fn project_workspace() -> (TempDir, RouteLogic) {
         let dir = TempDir::new().unwrap();
         std::fs::write(dir.path().join("requirements.txt"), "fastapi\n").unwrap();
         std::fs::create_dir_all(dir.path().join("app")).unwrap();
@@ -1686,7 +1686,7 @@ connection: close
         )
         .unwrap();
 
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "fixture", WorkspaceKind::Project)
             .unwrap();
         (dir, app)
@@ -1733,7 +1733,7 @@ connection: close
         )
         .unwrap();
 
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "x", WorkspaceKind::Project)
             .unwrap();
         let scan = app.scan().unwrap();
@@ -1781,7 +1781,7 @@ connection: close
     #[test]
     fn a_standalone_workspace_has_nothing_to_scan() {
         let dir = TempDir::new().unwrap();
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "client", WorkspaceKind::Standalone)
             .unwrap();
 
@@ -1838,7 +1838,9 @@ connection: close
             let entry = entry.unwrap();
             let target = to.join(entry.file_name());
             if entry.file_type().unwrap().is_dir() {
-                if entry.file_name() == "__pycache__" || entry.file_name() == ".routelens" {
+                // A workspace left by opening the fixture in the app — under either name.
+                let name = entry.file_name();
+                if name == "__pycache__" || name == ".routelogic" || name == ".routelens" {
                     continue;
                 }
                 std::fs::create_dir_all(&target).unwrap();
@@ -1852,7 +1854,7 @@ connection: close
     #[test]
     fn an_enrich_proposal_runs_nothing_and_names_everything() {
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
 
@@ -1882,7 +1884,7 @@ connection: close
     #[test]
     fn enrich_is_refused_for_a_framework_with_no_runtime_spec() {
         let dir = fixture_copy("express");
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "express", WorkspaceKind::Project)
             .unwrap();
         let scan = app.scan().unwrap();
@@ -1894,7 +1896,7 @@ connection: close
     }
 
     /// The whole loop against the Flask fixture, when a Python with Flask is available
-    /// (`ROUTELENS_TEST_PYTHON`, or a detected interpreter that can import it).
+    /// (`ROUTELOGIC_TEST_PYTHON`, or a detected interpreter that can import it).
     #[test]
     fn enrich_merges_runtime_truth_onto_static_locations_and_records_consent() {
         let Some(python) = python_with("flask") else {
@@ -1902,7 +1904,7 @@ connection: close
             return;
         };
         let dir = fixture_copy("flask");
-        let mut app = RouteLens::with_data_dir(data_dir());
+        let mut app = RouteLogic::with_data_dir(data_dir());
         app.create_workspace(dir.path(), "flask", WorkspaceKind::Project)
             .unwrap();
         let before = app.scan().unwrap();
@@ -1931,7 +1933,7 @@ connection: close
             "{report:?}"
         );
         assert!(report.matched >= 15, "{report:?}");
-        assert!(report.command.contains("routelens_enrich.py"));
+        assert!(report.command.contains("routelogic_enrich.py"));
 
         // The gap closed, and the source location survived the merge.
         let stats = after
@@ -1970,7 +1972,7 @@ connection: close
             Some("app:create_app()")
         );
         let manifest =
-            std::fs::read_to_string(dir.path().join(".routelens/workspace.yaml")).unwrap();
+            std::fs::read_to_string(dir.path().join(".routelogic/workspace.yaml")).unwrap();
         assert!(
             manifest.contains("app_target: app:create_app()"),
             "{manifest}"
@@ -1985,7 +1987,7 @@ connection: close
     }
 
     fn python_with(module: &str) -> Option<PathBuf> {
-        let candidates: Vec<PathBuf> = std::env::var_os("ROUTELENS_TEST_PYTHON")
+        let candidates: Vec<PathBuf> = std::env::var_os("ROUTELOGIC_TEST_PYTHON")
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_else(|| {
                 rl_discovery::enrich::interpreter::detect(Path::new("."))

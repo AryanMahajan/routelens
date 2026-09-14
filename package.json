@@ -1,5 +1,5 @@
 {
-  "name": "routelens",
+  "name": "routelogic",
   "private": true,
   "version": "0.1.0",
   "description": "Local-first API client that discovers HTTP endpoints from your source code (FastAPI, Flask, Django, Express, Next.js) and lets you test them — a codebase-aware Postman alternative built in Rust and Tauri.",
@@ -26,7 +26,7 @@
     "local-first",
     "developer-tools"
   ],
-  "repository": "github:AryanMahajan/routelens",
+  "repository": "github:AryanMahajan/routelogic",
   "license": "MIT",
   "scripts": {
     "tauri": "tauri",

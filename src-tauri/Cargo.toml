@@ -1,6 +1,6 @@
 [package]
-name = "routelens"
-description = "RouteLens desktop shell. Command wrappers only -- all logic lives in rl-core."
+name = "routelogic"
+description = "RouteLogic desktop shell. Command wrappers only -- all logic lives in rl-core."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [lib]
-name = "routelens_lib"
+name = "routelogic_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

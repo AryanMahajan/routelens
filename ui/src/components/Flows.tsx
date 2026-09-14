@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, CoreError } from "../api";
 
 /**
- * Saved flows — one file each under `.routelens/flows/`, committed with the project so
+ * Saved flows — one file each under `.routelogic/flows/`, committed with the project so
  * whoever clones it gets the tests too.
  */
 export function Flows({

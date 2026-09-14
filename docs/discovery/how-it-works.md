@@ -44,7 +44,7 @@ mechanical.
 
 ## The registration graph
 
-RouteLens solves it once, not once per framework. Framework adapters do not resolve paths;
+RouteLogic solves it once, not once per framework. Framework adapters do not resolve paths;
 they only recognise three kinds of fact:
 
 - *this expression creates a router*
@@ -63,7 +63,7 @@ A resolver then walks mount edges from each application root, composing prefixes
 descends, and emits one `EndpointSpec` per reachable registration.
 
 This is what keeps adapters small and makes design principle #6 real: adding a framework
-means teaching RouteLens to recognise that framework's spelling of those three facts, not
+means teaching RouteLogic to recognise that framework's spelling of those three facts, not
 reimplementing prefix resolution.
 
 ### Cases the resolver must handle
@@ -162,7 +162,7 @@ invented. [Runtime enrich](runtime-enrich.md) is the fix for projects where this
 
 ### 7. Base URL inference
 
-Discovered routes have no host, and "zero configuration" has to survive that. RouteLens
+Discovered routes have no host, and "zero configuration" has to survive that. RouteLogic
 collects candidates from:
 
 - `uvicorn` / `gunicorn` / `flask run` arguments in scripts, Procfiles, and Makefiles

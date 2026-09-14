@@ -1,7 +1,7 @@
 //! Path templates.
 //!
 //! A discovered path is a list of segments, not a string. That distinction is what lets
-//! RouteLens compose router prefixes across files, and — more importantly — admit when it
+//! RouteLogic compose router prefixes across files, and — more importantly — admit when it
 //! could not work a segment out. See [`PathSegment::Unresolved`].
 
 use serde::{Deserialize, Serialize};
@@ -74,7 +74,7 @@ pub enum PathSegment {
     },
     /// A segment that could not be determined statically.
     ///
-    /// This exists so RouteLens never has to guess. `expr` holds the source text that
+    /// This exists so RouteLogic never has to guess. `expr` holds the source text that
     /// defeated resolution, so the UI can show the developer exactly what to look at.
     Unresolved {
         expr: String,

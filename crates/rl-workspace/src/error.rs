@@ -6,10 +6,10 @@ pub type Result<T> = std::result::Result<T, WorkspaceError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    #[error("no RouteLens workspace at {}", .0.display())]
+    #[error("no RouteLogic workspace at {}", .0.display())]
     NotFound(PathBuf),
 
-    #[error("a RouteLens workspace already exists at {}", .0.display())]
+    #[error("a RouteLogic workspace already exists at {}", .0.display())]
     AlreadyExists(PathBuf),
 
     #[error("no collection named {0:?}")]
@@ -22,7 +22,7 @@ pub enum WorkspaceError {
     NoSuchFlow(String),
 
     #[error(
-        "workspace version {found} was written by a newer RouteLens; this build understands \
+        "workspace version {found} was written by a newer RouteLogic; this build understands \
          version {supported}"
     )]
     UnsupportedVersion { found: u32, supported: u32 },

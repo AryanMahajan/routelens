@@ -30,6 +30,7 @@ const ALWAYS_SKIP: &[&str] = &[
     ".nuxt",
     ".svelte-kit",
     "coverage",
+    ".routelogic",
     ".routelens",
 ];
 

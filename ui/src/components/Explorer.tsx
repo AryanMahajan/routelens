@@ -69,7 +69,7 @@ export function Explorer({
     return (
       <div className="flex flex-col gap-3 px-2 py-4">
         <p className="text-muted">
-          Scan the project to see the API it exposes. RouteLens reads your source — it never
+          Scan the project to see the API it exposes. RouteLogic reads your source — it never
           runs it.
         </p>
         <button
@@ -162,7 +162,7 @@ export function Explorer({
         {groups.length === 0 && (
           <p className="px-1 py-4 text-muted">
             {scan.endpoints.length === 0
-              ? "No endpoints found. RouteLens understands FastAPI, Flask, Express and Next.js today."
+              ? "No endpoints found. RouteLogic understands FastAPI, Flask, Express and Next.js today."
               : "Nothing matches that filter."}
           </p>
         )}

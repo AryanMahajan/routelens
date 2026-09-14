@@ -463,7 +463,7 @@ fn auth_from_security(security: &Value, schemes: &Map<String, Value>) -> Option<
 /// Replace `{"$ref": "#/..."}` with what it points at.
 ///
 /// Only local references are followed. Fetching a remote `$ref` would mean a document could
-/// make RouteLens issue network requests the user never asked for, which is not a trade this
+/// make RouteLogic issue network requests the user never asked for, which is not a trade this
 /// importer makes — see `docs/security.md`.
 fn resolve_refs(value: &Value, root: &Value, depth: usize, seen: &mut Vec<String>) -> Value {
     if depth > MAX_REF_DEPTH {

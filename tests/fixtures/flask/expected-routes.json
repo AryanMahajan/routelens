@@ -173,7 +173,7 @@
     },
     {
       "path": "/static/{filename}",
-      "reason": "Flask's built-in static route is served by the framework, not declared in the project. Runtime enrich reports it and RouteLens drops it there too."
+      "reason": "Flask's built-in static route is served by the framework, not declared in the project. Runtime enrich reports it and RouteLogic drops it there too."
     }
   ]
 }

@@ -1,6 +1,6 @@
 //! Collections — saved requests, committed alongside the project.
 //!
-//! The intended payoff: someone clones the repository, opens RouteLens, and the project's
+//! The intended payoff: someone clones the repository, opens RouteLogic, and the project's
 //! requests are already there.
 
 use rl_model::RequestDraft;

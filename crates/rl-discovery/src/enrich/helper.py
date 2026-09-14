@@ -1,9 +1,9 @@
-"""RouteLens runtime-enrich helper.
+"""RouteLogic runtime-enrich helper.
 
 Imports one application object and prints what it knows about its own API as JSON on
 stdout. Nothing else: no server is started, no port is bound, no file is written.
 
-    python routelens_enrich.py MODULE[:ATTRIBUTE[()]]
+    python routelogic_enrich.py MODULE[:ATTRIBUTE[()]]
 
   MODULE           a dotted module path, imported from the current directory; for Django,
                    the settings module (what DJANGO_SETTINGS_MODULE would name)
@@ -18,7 +18,7 @@ Output, on success:
 Anything the application prints during import goes to stderr, so stdout stays parseable.
 Exit status is non-zero on failure, with the reason on stderr.
 
-This file is written by RouteLens and overwritten on every run; edits will not survive.
+This file is written by RouteLogic and overwritten on every run; edits will not survive.
 """
 
 import importlib
@@ -31,7 +31,7 @@ import traceback
 
 
 def fail(message, status=1):
-    sys.stderr.write("routelens: " + message + "\n")
+    sys.stderr.write("routelogic: " + message + "\n")
     sys.exit(status)
 
 
@@ -364,10 +364,10 @@ def convert_django_path(raw):
 
 def main():
     if len(sys.argv) != 2:
-        fail("usage: routelens_enrich.py MODULE[:ATTRIBUTE[()]]", 2)
+        fail("usage: routelogic_enrich.py MODULE[:ATTRIBUTE[()]]", 2)
 
     sys.path.insert(0, os.getcwd())
-    os.environ.setdefault("ROUTELENS_ENRICH", "1")
+    os.environ.setdefault("ROUTELOGIC_ENRICH", "1")
 
     # Anything the application prints while importing must not corrupt the JSON.
     real_stdout = sys.stdout

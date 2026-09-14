@@ -5,7 +5,7 @@ import type { EnrichProposal, ScanResult } from "../types";
 /**
  * The consent step for runtime enrich.
  *
- * Everything else RouteLens does reads the project. This runs it — imports the application
+ * Everything else RouteLogic does reads the project. This runs it — imports the application
  * to ask for its own route table — so the exact command is shown, with where each part of it
  * came from, and nothing happens until "Run" is pressed. The target is remembered per project
  * in `workspace.yaml`; the interpreter is not, because it is machine-specific.
@@ -262,7 +262,7 @@ function Result({ scan }: { scan: ScanResult }) {
       )}
       <p className="text-[11px] text-muted">
         Rescanning returns to the static result. The target is remembered in{" "}
-        <code>.routelens/workspace.yaml</code>.
+        <code>.routelogic/workspace.yaml</code>.
       </p>
     </div>
   );

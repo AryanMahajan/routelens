@@ -34,10 +34,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// The helper, embedded so a build of RouteLens carries exactly one version of it.
+/// The helper, embedded so a build of RouteLogic carries exactly one version of it.
 pub const HELPER_SOURCE: &str = include_str!("helper.py");
-/// What the helper is called on disk. Written under `.routelens/local/`.
-pub const HELPER_FILE_NAME: &str = "routelens_enrich.py";
+/// What the helper is called on disk. Written under `.routelogic/local/`.
+pub const HELPER_FILE_NAME: &str = "routelogic_enrich.py";
 /// How long the application gets to import before the run is abandoned.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -181,7 +181,7 @@ pub fn run(plan: &EnrichPlan, timeout: Duration) -> Result<EnrichOutput, EnrichE
         // Importing must not litter the project with bytecode caches.
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("PYTHONUNBUFFERED", "1")
-        .env("ROUTELENS_ENRICH", "1")
+        .env("ROUTELOGIC_ENRICH", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -277,7 +277,7 @@ mod tests {
     fn plan_for(dir: &Path, interpreter: PathBuf, target: &str) -> EnrichPlan {
         plan(
             dir,
-            &dir.join(".routelens").join("local"),
+            &dir.join(".routelogic").join("local"),
             Interpreter {
                 path: interpreter,
                 source: "test".into(),
@@ -327,7 +327,7 @@ mod tests {
             .canonicalize()
             .unwrap();
         let Some(python) = python_with("flask") else {
-            eprintln!("skipping: no Python with flask importable (set ROUTELENS_TEST_PYTHON)");
+            eprintln!("skipping: no Python with flask importable (set ROUTELOGIC_TEST_PYTHON)");
             return;
         };
         let scratch = tempfile::TempDir::new().unwrap();
@@ -358,7 +358,7 @@ mod tests {
             .canonicalize()
             .unwrap();
         let Some(python) = python_with("fastapi") else {
-            eprintln!("skipping: no Python with fastapi importable (set ROUTELENS_TEST_PYTHON)");
+            eprintln!("skipping: no Python with fastapi importable (set ROUTELOGIC_TEST_PYTHON)");
             return;
         };
         let scratch = tempfile::TempDir::new().unwrap();
@@ -436,9 +436,9 @@ mod tests {
         }
     }
 
-    /// `ROUTELENS_TEST_PYTHON`, or the first detected interpreter that can import `module`.
+    /// `ROUTELOGIC_TEST_PYTHON`, or the first detected interpreter that can import `module`.
     fn python_with(module: &str) -> Option<PathBuf> {
-        let candidates: Vec<PathBuf> = std::env::var_os("ROUTELENS_TEST_PYTHON")
+        let candidates: Vec<PathBuf> = std::env::var_os("ROUTELOGIC_TEST_PYTHON")
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_else(|| {
                 interpreter::detect(Path::new("."))

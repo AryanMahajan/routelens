@@ -2990,7 +2990,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "routelens"
+name = "routelogic"
 version = "0.1.0"
 dependencies = [
  "rl-core",

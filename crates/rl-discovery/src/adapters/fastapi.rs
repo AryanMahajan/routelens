@@ -350,7 +350,7 @@ fn extract_decorated(
 /// Best-effort by design. Where this cannot tell, it says nothing rather than inventing a
 /// schema — [runtime enrich][enrich] is the answer when the schema really matters.
 ///
-/// [enrich]: https://github.com/AryanMahajan/routelens/blob/main/docs/discovery/runtime-enrich.md
+/// [enrich]: https://github.com/AryanMahajan/routelogic/blob/main/docs/discovery/runtime-enrich.md
 fn extract_signature(
     file: &ParsedFile,
     definition: Node<'_>,

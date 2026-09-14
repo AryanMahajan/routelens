@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 /// An HTTP method.
 ///
-/// Only the methods RouteLens can meaningfully discover and send are modelled.
+/// Only the methods RouteLogic can meaningfully discover and send are modelled.
 /// Anything else round-trips through [`HttpMethod::Other`] rather than being rejected —
 /// an API client that cannot send an unusual method is less useful than one that can.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

@@ -1,9 +1,9 @@
 # Security
 
-RouteLens opens arbitrary repositories and sends arbitrary HTTP requests. Both deserve a
+RouteLogic opens arbitrary repositories and sends arbitrary HTTP requests. Both deserve a
 stated trust model rather than an assumed one.
 
-## What RouteLens reads
+## What RouteLogic reads
 
 Only the directory you explicitly select, and only files that survive the `.gitignore`-aware
 walk and the adapter's candidate filter.
@@ -12,7 +12,7 @@ Filesystem access is scoped by Tauri v2's capability system. The application has
 access to your home directory; a folder becomes readable when you pick it in a dialog, and
 that grant is what persists between sessions.
 
-## What RouteLens executes
+## What RouteLogic executes
 
 **By default: nothing from your project.** Static discovery parses source into syntax trees.
 It never imports a module, never evaluates an expression, never starts a server.
@@ -29,9 +29,9 @@ import-time side effects. Therefore:
 - It never runs automatically.
 - Every run goes through a dialog that displays the exact command and interpreter it will
   use, and waits for confirmation.
-- The target is remembered per project in `.routelens/workspace.yaml` and revocable from
+- The target is remembered per project in `.routelogic/workspace.yaml` and revocable from
   the same dialog. The interpreter is never stored.
-- The helper script is written to `.routelens/local/` (gitignored) before it runs, so what
+- The helper script is written to `.routelogic/local/` (gitignored) before it runs, so what
   is shown is what executes and can be read first.
 - The helper introspects only. It starts no server, binds no port, and writes nothing —
   bytecode caching is disabled for the run.
@@ -39,7 +39,7 @@ import-time side effects. Therefore:
 Treat enabling runtime enrich as equivalent to running the project's test suite: fine for
 your own code, a decision worth making consciously for someone else's.
 
-## What RouteLens sends
+## What RouteLogic sends
 
 Only requests you trigger. There is no telemetry, no analytics, no update ping, no account,
 and no cloud component. The application is fully functional with no network access beyond the
@@ -63,7 +63,7 @@ Covered in full in [secrets](workspace/secrets.md). In summary:
 - Resolution happens in the HTTP engine immediately before sending, minimising the window in
   which a plaintext value exists.
 - Secrets are redacted in history, exports, logs, and error messages.
-- `.routelens/.gitignore` is written at workspace creation, not after the fact.
+- `.routelogic/.gitignore` is written at workspace creation, not after the fact.
 
 ## Redirects
 
@@ -82,9 +82,9 @@ displayed.
 
 **Out of scope**
 
-- RouteLens does not sandbox runtime enrich. It runs project code with your privileges, which
+- RouteLogic does not sandbox runtime enrich. It runs project code with your privileges, which
   is why it is gated behind explicit consent
-- RouteLens does not defend against a malicious OpenAPI document beyond parser robustness
+- RouteLogic does not defend against a malicious OpenAPI document beyond parser robustness
 - Protecting secrets from other processes running as your user is the operating system's job
 
 ## Reporting a vulnerability

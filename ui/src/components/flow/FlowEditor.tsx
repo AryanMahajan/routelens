@@ -56,7 +56,7 @@ export function FlowEditor({
   onSave: () => void;
 }) {
   const [picking, setPicking] = useState(false);
-  const [inspectorWidth, setInspectorWidth] = usePersistedNumber("routelens.inspector.width", INSPECTOR_WIDTH);
+  const [inspectorWidth, setInspectorWidth] = usePersistedNumber("routelogic.inspector.width", INSPECTOR_WIDTH);
   const cyclic = useMemo(() => hasCycle(flow), [flow]);
   const node = selected ? (flow.nodes.find((n) => n.id === selected) ?? null) : null;
   // With a card selected, Run covers the group wired to it — not the islands elsewhere.

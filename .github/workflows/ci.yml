@@ -76,7 +76,7 @@ jobs:
 
       - run: cargo test --workspace
         env:
-          ROUTELENS_TEST_PYTHON: python
+          ROUTELOGIC_TEST_PYTHON: python
 
   ui:
     name: UI

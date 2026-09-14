@@ -37,7 +37,7 @@ Connect cards by dragging from a right-hand handle to a left-hand one. Edges are
 
 ## What a card is
 
-A request card is an ordinary RouteLens request — the same editor a request tab has — plus
+A request card is an ordinary RouteLogic request — the same editor a request tab has — plus
 two things that make it a test step:
 
 **Extract** — pull values out of the response for later steps. Each becomes a
@@ -125,7 +125,7 @@ absent until it has.
 
 ## On disk
 
-Flows are saved to `.routelens/flows/<name>.yaml` beside the project's environments, so
+Flows are saved to `.routelogic/flows/<name>.yaml` beside the project's environments, so
 they are committed with the project and whoever clones it gets the tests. The file is a
 flat list of cards, each with its request, `extract` and `assert`, plus the edges — meant
 to be readable in a pull request.
@@ -151,7 +151,7 @@ edges:
 ```
 
 Secret values never appear: a request references `{{secret:name}}` and the value is
-substituted moments before sending, as everywhere else in RouteLens.
+substituted moments before sending, as everywhere else in RouteLogic.
 
 ## A worked example
 
@@ -164,7 +164,7 @@ flow for the FastAPI fixture in `tests/fixtures/fastapi`: health → create a us
 → *if it is a new row* → delete → confirm 404, plus an items chain across the `/v1` and
 `/v2` mounts. The header of the file says how to run the fixture and where to copy the
 flow; `cargo test -p rl-core --test fixture_flow` keeps it in step with the scan, and runs
-it for real when `ROUTELENS_FIXTURE_URL` points at the app.
+it for real when `ROUTELOGIC_FIXTURE_URL` points at the app.
 
 ## Not yet
 

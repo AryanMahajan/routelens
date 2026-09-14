@@ -28,7 +28,7 @@ python -m uvicorn app.main:app --port 9000
 
 `curl http://localhost:9000/health` should print `{"ok":true}`.
 
-## 2. Open it in RouteLens
+## 2. Open it in RouteLogic
 
 **Open…** → choose `tests/fixtures/fastapi`. The scan runs on its own; the **Api** panel
 lists 14 endpoints in five groups, two of them flagged with gaps (a prefix that comes from
@@ -115,7 +115,7 @@ a duration check: source `duration`, `<`, `2000`.
 ### Save
 
 Name it `user lifecycle` in the toolbar, **Ctrl+S**. It is now
-`tests/fixtures/fastapi/.routelens/flows/user lifecycle.yaml` and listed under **Flows**.
+`tests/fixtures/fastapi/.routelogic/flows/user lifecycle.yaml` and listed under **Flows**.
 
 ## 4. Run it
 
@@ -242,4 +242,4 @@ or moved.
 - **Check history**: every request the run sent is listed, newest first, with the token
   masked.
 - Run the same flow from the test suite:
-  `ROUTELENS_FIXTURE_URL=http://localhost:9000 cargo test -p rl-core --test fixture_flow`.
+  `ROUTELOGIC_FIXTURE_URL=http://localhost:9000 cargo test -p rl-core --test fixture_flow`.

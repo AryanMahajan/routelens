@@ -79,7 +79,7 @@ pub fn parse_curl(input: &str) -> Result<Imported<RequestDraft>> {
             }
 
             // Output and verbosity flags describe what curl does with the response, which is
-            // RouteLens's job now. Dropping them silently is correct.
+            // RouteLogic's job now. Dropping them silently is correct.
             "-s" | "--silent" | "-S" | "--show-error" | "-v" | "--verbose" | "-i" | "--include"
             | "-f" | "--fail" | "-O" | "--remote-name" | "-#" | "--progress-bar" | "-N"
             | "--no-buffer" | "-g" | "--globoff" => {}
@@ -240,7 +240,7 @@ impl Parsed {
 
         if self.insecure {
             warnings.push(
-                "`-k` disables certificate verification; RouteLens applies it to this request \
+                "`-k` disables certificate verification; RouteLogic applies it to this request \
                  only and never saves it"
                     .into(),
             );

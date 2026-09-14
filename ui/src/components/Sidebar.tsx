@@ -59,7 +59,7 @@ export function Sidebar({
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
 }) {
-  // The API tree is the reason RouteLens exists, so it opens first for a project workspace.
+  // The API tree is the reason RouteLogic exists, so it opens first for a project workspace.
   const [panel, setPanel] = useState<Panel>("api");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);

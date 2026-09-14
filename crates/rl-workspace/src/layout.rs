@@ -1,9 +1,9 @@
 //! Where everything lives on disk.
 //!
-//! One type owns every path RouteLens writes, so the tier split is enforced in a single
+//! One type owns every path RouteLogic writes, so the tier split is enforced in a single
 //! place rather than by convention scattered across the crate.
 //!
-//! Collections and history are the exceptions to "everything under `.routelens/`": they are
+//! Collections and history are the exceptions to "everything under `.routelogic/`": they are
 //! *per user*, not per project — the same saved requests and the same "what did I send"
 //! log follow you whichever project is open — and live in the user's data directory.
 //! Environments, flows and secrets stay with the project.
@@ -11,7 +11,10 @@
 use crate::error::{Result, WorkspaceError};
 use std::path::{Path, PathBuf};
 
-pub const DIR_NAME: &str = ".routelens";
+pub const DIR_NAME: &str = ".routelogic";
+/// What the workspace directory was called before the project was renamed. Read only to
+/// migrate: a `.routelens/` is moved to `.routelogic/` the first time it is opened.
+pub const LEGACY_DIR_NAME: &str = ".routelens";
 pub const MANIFEST_FILE: &str = "workspace.yaml";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const ENVIRONMENTS_DIR: &str = "environments";
@@ -22,16 +25,16 @@ pub const HISTORY_DB: &str = "history.sqlite";
 pub const INDEX_DB: &str = "index.sqlite";
 pub const GITIGNORE_FILE: &str = ".gitignore";
 
-/// The rule appended to the *project's* own `.gitignore` so the whole `.routelens/`
+/// The rule appended to the *project's* own `.gitignore` so the whole `.routelogic/`
 /// directory stays out of the user's repository.
-pub const PROJECT_IGNORE_RULE: &str = ".routelens";
+pub const PROJECT_IGNORE_RULE: &str = ".routelogic";
 
 /// Written when a workspace is created, not after someone notices a token in a diff.
 ///
 /// Git-friendly storage plus bearer tokens is exactly how credentials reach version control,
 /// so the private tier is excluded from the moment it can exist.
 pub const GITIGNORE_CONTENTS: &str = "\
-# Written automatically by RouteLens.
+# Written automatically by RouteLogic.
 #
 # The private and disposable storage tiers live in local/: secret values,
 # request history, and the rebuildable source index. None of it belongs in
@@ -44,20 +47,25 @@ local/
 
 /// Environment variable that relocates the per-user data directory. Tests set it to a
 /// temporary directory; a portable install could point it at a USB stick.
-pub const DATA_DIR_ENV: &str = "ROUTELENS_HOME";
+pub const DATA_DIR_ENV: &str = "ROUTELOGIC_HOME";
 
-/// The per-user data directory: `%LOCALAPPDATA%\\routelens` on Windows,
-/// `~/.local/share/routelens` on Linux, `~/Library/Application Support/routelens` on macOS.
+/// The per-user data directory's name: `%LOCALAPPDATA%\routelogic` on Windows,
+/// `~/.local/share/routelogic` on Linux, `~/Library/Application Support/routelogic` on macOS.
+pub const DATA_DIR_NAME: &str = "routelogic";
+/// The data directory's name before the rename; see [`Layout::legacy_data_dir`].
+pub const LEGACY_DATA_DIR_NAME: &str = "routelens";
+
+/// The per-user data directory. See [`DATA_DIR_NAME`].
 pub fn default_data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
         return PathBuf::from(dir);
     }
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("routelens")
+        .join(DATA_DIR_NAME)
 }
 
-/// Every path in a workspace, derived from the directory that contains `.routelens/`, plus
+/// Every path in a workspace, derived from the directory that contains `.routelogic/`, plus
 /// the per-user data directory the collections live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layout {
@@ -66,7 +74,7 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// `root` is the directory *containing* `.routelens/` — a project root, or an
+    /// `root` is the directory *containing* `.routelogic/` — a project root, or an
     /// application data directory for a standalone workspace.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Layout::with_data_dir(root, default_data_dir())
@@ -94,6 +102,20 @@ impl Layout {
 
     pub fn dir(&self) -> PathBuf {
         self.root.join(DIR_NAME)
+    }
+
+    /// Where the workspace lived under the old name; read only to migrate.
+    pub fn legacy_dir(&self) -> PathBuf {
+        self.root.join(LEGACY_DIR_NAME)
+    }
+
+    /// The per-user directory under the old name, beside the current one — only when the
+    /// data directory is the default, which is the only case the old name applies to.
+    pub fn legacy_data_dir(&self) -> Option<PathBuf> {
+        if self.data_dir.file_name()? != DATA_DIR_NAME {
+            return None;
+        }
+        Some(self.data_dir.with_file_name(LEGACY_DATA_DIR_NAME))
     }
 
     pub fn manifest(&self) -> PathBuf {
@@ -124,7 +146,7 @@ impl Layout {
         self.dir().join(GITIGNORE_FILE)
     }
 
-    /// The project's own `.gitignore`, beside `.routelens/` — not the one inside it.
+    /// The project's own `.gitignore`, beside `.routelogic/` — not the one inside it.
     pub fn project_gitignore(&self) -> PathBuf {
         self.root.join(GITIGNORE_FILE)
     }
@@ -170,8 +192,10 @@ impl Layout {
         self.local_dir().join(INDEX_DB)
     }
 
+    /// Whether there is a workspace here — under the current name, or the old one that
+    /// opening will migrate.
     pub fn exists(&self) -> bool {
-        self.manifest().is_file()
+        self.manifest().is_file() || self.legacy_dir().join(MANIFEST_FILE).is_file()
     }
 }
 
@@ -217,29 +241,29 @@ mod tests {
     #[test]
     fn shared_tier_sits_directly_under_the_workspace_dir() {
         let l = layout();
-        assert!(l.manifest().ends_with(".routelens/workspace.yaml"));
-        assert!(l.environments_dir().ends_with(".routelens/environments"));
-        assert!(l.flows_dir().ends_with(".routelens/flows"));
+        assert!(l.manifest().ends_with(".routelogic/workspace.yaml"));
+        assert!(l.environments_dir().ends_with(".routelogic/environments"));
+        assert!(l.flows_dir().ends_with(".routelogic/flows"));
     }
 
     #[test]
     fn collections_are_per_user_not_per_project() {
-        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelens");
-        assert!(l.collections_dir().ends_with("routelens/collections"));
+        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelogic");
+        assert!(l.collections_dir().ends_with("routelogic/collections"));
         assert!(!l.collections_dir().starts_with("/projects"));
         assert!(l
             .legacy_collections_dir()
-            .ends_with(".routelens/collections"));
+            .ends_with(".routelogic/collections"));
     }
 
     #[test]
     fn history_is_per_user_not_per_project() {
-        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelens");
-        assert!(l.history_db().ends_with("routelens/history.sqlite"));
+        let l = Layout::with_data_dir("/projects/myapp", "/home/me/.local/share/routelogic");
+        assert!(l.history_db().ends_with("routelogic/history.sqlite"));
         assert!(!l.history_db().starts_with("/projects"));
         assert!(l
             .legacy_history_db()
-            .ends_with(".routelens/local/history.sqlite"));
+            .ends_with(".routelogic/local/history.sqlite"));
     }
 
     #[test]
@@ -283,7 +307,7 @@ mod tests {
     #[test]
     fn file_names_map_back_to_display_names() {
         assert_eq!(
-            name_from_file(Path::new("/x/.routelens/collections/Users.yaml")),
+            name_from_file(Path::new("/x/.routelogic/collections/Users.yaml")),
             Some("Users".to_string())
         );
         assert_eq!(name_from_file(Path::new("/x/notes.txt")), None);

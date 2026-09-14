@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RouteLens",
+  "productName": "RouteLogic",
   "version": "0.1.0",
-  "identifier": "dev.routelens.app",
+  "identifier": "dev.routelogic.app",
   "build": {
     "beforeDevCommand": {
       "cwd": "../ui",
@@ -18,7 +18,7 @@
   "app": {
     "windows": [
       {
-        "title": "RouteLens",
+        "title": "RouteLogic",
         "width": 1280,
         "height": 820,
         "minWidth": 720,

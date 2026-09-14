@@ -30,7 +30,7 @@ This is a real trust boundary, so:
 - The dialog shows the **exact command** — interpreter, helper script, target — and where
   each part was inferred from. Change any part and the command line updates before you
   approve it.
-- The decision is stored per project (the target, in `.routelens/workspace.yaml` as
+- The decision is stored per project (the target, in `.routelogic/workspace.yaml` as
   `app_target`) and withdrawn with **Forget**. The interpreter is not stored: it is
   machine-specific, and the workspace file is meant to be committed.
 - If the helper fails, the failure is reported with the tail of its stderr — the traceback
@@ -40,7 +40,7 @@ See [security](../security.md) for the full trust model.
 
 ## How it works
 
-1. **Locate the application object.** RouteLens needs a `module:attribute` target — the
+1. **Locate the application object.** RouteLogic needs a `module:attribute` target — the
    same thing `uvicorn` takes. Candidates come from, best first:
 
    | Source | Example | Becomes |
@@ -62,15 +62,15 @@ See [security](../security.md) for the full trust model.
    created first.
 
 3. **Write, then run, the helper.** A single self-contained script,
-   `routelens_enrich.py`, is written to `.routelens/local/` (gitignored) before every run,
-   so what you can read is what runs. It is embedded in the RouteLens binary; edits do not
+   `routelogic_enrich.py`, is written to `.routelogic/local/` (gitignored) before every run,
+   so what you can read is what runs. It is embedded in the RouteLogic binary; edits do not
    survive. The command is
 
    ```
-   cd <project> && <python> .routelens/local/routelens_enrich.py <module:attribute>
+   cd <project> && <python> .routelogic/local/routelogic_enrich.py <module:attribute>
    ```
 
-   with `PYTHONDONTWRITEBYTECODE=1` (no `__pycache__` litter) and `ROUTELENS_ENRICH=1` in
+   with `PYTHONDONTWRITEBYTECODE=1` (no `__pycache__` litter) and `ROUTELOGIC_ENRICH=1` in
    the environment, so an application that wants to can notice. The helper imports the
    target, calls it if it is a factory, then:
 
@@ -136,12 +136,12 @@ Rescanning returns to the plain static result; enrich is re-run on request.
 - You only need paths and methods, which static analysis gets right in the common case.
 - You cannot or would rather not install the project's dependencies.
 
-RouteLens is fully usable without ever enabling it.
+RouteLogic is fully usable without ever enabling it.
 
 ## Trying it
 
 `tests/fixtures/flask`, `tests/fixtures/fastapi` and `tests/fixtures/django` are runnable. Create an environment in
-one, install its requirements, open it in RouteLens, scan, then **Ask the app**:
+one, install its requirements, open it in RouteLogic, scan, then **Ask the app**:
 
 ```bash
 cd tests/fixtures/flask

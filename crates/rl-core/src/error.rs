@@ -21,9 +21,9 @@ pub enum CoreError {
     #[error("no endpoint with id {id:?}")]
     NoSuchEndpoint { id: String },
 
-    /// Refused deliberately: sending a request to a path RouteLens could not work out would
+    /// Refused deliberately: sending a request to a path RouteLogic could not work out would
     /// hit a meaningless URL and fail in a way the developer blames on their own code.
-    #[error("`{id}` has a path RouteLens could not resolve: {}", .expressions.join(", "))]
+    #[error("`{id}` has a path RouteLogic could not resolve: {}", .expressions.join(", "))]
     UnresolvedEndpoint {
         id: String,
         expressions: Vec<String>,

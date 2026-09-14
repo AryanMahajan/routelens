@@ -1,6 +1,6 @@
 //! # rl-model
 //!
-//! The unified API model. Every source RouteLens understands — source code, cURL, OpenAPI,
+//! The unified API model. Every source RouteLogic understands — source code, cURL, OpenAPI,
 //! raw HTTP, manual entry — resolves into the types here, so nothing downstream needs to
 //! know where a request came from.
 //!
@@ -12,7 +12,7 @@
 //! Manual ───────┘
 //! ```
 //!
-//! This crate performs no I/O and depends on no other RouteLens crate. Everything in it is
+//! This crate performs no I/O and depends on no other RouteLogic crate. Everything in it is
 //! data and pure functions, which keeps it exhaustively testable and keeps the type
 //! definitions honest.
 //!
@@ -34,7 +34,7 @@
 //! ## Admitting what is unknown
 //!
 //! [`PathSegment::Unresolved`] carries the source expression that defeated static analysis,
-//! so a path RouteLens could not work out is displayed as a gap rather than guessed at. A
+//! so a path RouteLogic could not work out is displayed as a gap rather than guessed at. A
 //! confidently wrong path is worse than a missing one, because it fails in a way the
 //! developer will blame on their own code.
 

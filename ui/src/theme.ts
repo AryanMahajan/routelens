@@ -7,7 +7,7 @@
 
 export type Theme = "dark" | "light";
 
-const KEY = "routelens.theme";
+const KEY = "routelogic.theme";
 
 export function currentTheme(): Theme {
   try {

@@ -24,7 +24,7 @@ Highest priority first:
 ```
 
 The first match wins. A missing variable is a **hard error**, not an empty string — a request
-to `https:///api/users` fails in a confusing way, so RouteLens refuses to send it and tells
+to `https:///api/users` fails in a confusing way, so RouteLogic refuses to send it and tells
 you which variable is unset.
 
 One resolver implementation serves both the UI preview and the HTTP engine. The preview is
@@ -48,7 +48,7 @@ private tier and are referenced as `{{secret:api_token}}`. See [secrets](secrets
 
 ## Base URL
 
-For a project workspace, `base_url` is usually populated from discovery. RouteLens infers
+For a project workspace, `base_url` is usually populated from discovery. RouteLogic infers
 candidates from run scripts, `.env` files, Dockerfiles, and compose files, then offers them
 ranked. Whatever you pick is written into the active environment as an ordinary variable, so
 it stays visible and editable rather than hidden in tool state.

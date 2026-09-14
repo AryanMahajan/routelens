@@ -1,22 +1,22 @@
-# RouteLens — API client that discovers endpoints from your source code
+# RouteLogic — API client that discovers endpoints from your source code
 
 **Open a FastAPI, Flask, Django, Express or Next.js project and see every API route it
 serves — then test it. A local-first, open-source API client built in Rust, with codebase-aware route
 discovery instead of hand-configured collections.**
 
-[![CI](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml/badge.svg)](https://github.com/AryanMahajan/routelens/actions/workflows/ci.yml)
+[![CI](https://github.com/AryanMahajan/routelogic/actions/workflows/ci.yml/badge.svg)](https://github.com/AryanMahajan/routelogic/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/core-Rust-dea584?logo=rust&logoColor=white)
 ![Tauri v2](https://img.shields.io/badge/desktop-Tauri%20v2-24C8D8?logo=tauri&logoColor=white)
 ![Windows · macOS · Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
 ![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)
 
 > **Pre-alpha.** Unsigned installers for every platform are on the
-> [Releases](https://github.com/AryanMahajan/routelens/releases) page, or run it from source.
+> [Releases](https://github.com/AryanMahajan/routelogic/releases) page, or run it from source.
 > [Install](#install) · [Run it from source](#run-it-from-source) · [What works](#what-works-today) · [Flows](#flows-multi-step-api-tests-on-a-canvas) · [Docs](docs/)
 
 ---
 
-Point RouteLens at a repository. It reads the source — it does not run it — works out which
+Point RouteLogic at a repository. It reads the source — it does not run it — works out which
 HTTP endpoints the project exposes, and gives you a request editor for each one, linked back
 to the file and line that defines it.
 
@@ -53,12 +53,12 @@ thing with one key. See [Flows](#flows-multi-step-api-tests-on-a-canvas).
 Postman, Insomnia, Bruno and Hoppscotch are good at storing requests you have already
 described to them. None of them read your source tree and tell you what the project actually
 serves. That gap — between *"I just cloned this repo"* and *"I can call its API"* — is what
-RouteLens closes.
+RouteLogic closes.
 
 It is deliberately not a Postman clone. It is the shortest path from *"what APIs does this
 project have?"* to *"I can see it, understand it, and test it."*
 
-|                                    | RouteLens | Postman | Insomnia | Bruno | Hoppscotch |
+|                                    | RouteLogic | Postman | Insomnia | Bruno | Hoppscotch |
 |------------------------------------|:---------:|:-------:|:--------:|:-----:|:----------:|
 | Discovers routes from source code  | **✅**    | ✗       | ✗        | ✗     | ✗          |
 | Click-through to the defining line | **✅**    | ✗       | ✗        | ✗     | ✗          |
@@ -137,7 +137,7 @@ so nothing is retyped, and every card still knows the file and line that serves 
 - **Inspect** any card after a run: the request as actually sent, extracted values, each
   check with expected vs found, and the full response in the same viewer a request tab uses.
 - **Jump to source** from a card with `↗`, exactly like the API panel.
-- Flows are saved as readable YAML in `.routelens/flows/` with the project, so they travel
+- Flows are saved as readable YAML in `.routelogic/flows/` with the project, so they travel
   with the repository; every request a run sends lands in history, redacted.
 
 `Ctrl+Enter` runs, `Ctrl+S` saves, `Ctrl+D` duplicates, `Delete` deletes, `Ctrl+B` hides the
@@ -159,7 +159,7 @@ that flow as a file.
 | [Flask](docs/discovery/frameworks.md#flask)      | Python | ✅ Implemented | Blueprints (nested, re-registered), `MethodView`, Flask-RESTful / RESTX, `add_url_rule` |
 | [Django / DRF](docs/discovery/frameworks.md#django--drf) | Python | ✅ Implemented | `urlpatterns`, `include()`, `re_path`, class-based views, ViewSets, `DefaultRouter`, `@action` |
 
-Discovery is static by default — RouteLens reads your code and never executes it. For the
+Discovery is static by default — RouteLogic reads your code and never executes it. For the
 Python frameworks, an opt-in [runtime enrich](docs/discovery/runtime-enrich.md) step imports
 your app for an exact result when you ask for it, and always shows you the exact command
 first.
@@ -170,13 +170,13 @@ Adding a framework is a self-contained job against a documented contract — see
 ## Install
 
 Download the build for your platform from the
-[latest release](https://github.com/AryanMahajan/routelens/releases/latest):
+[latest release](https://github.com/AryanMahajan/routelogic/releases/latest):
 
 | Platform | File |
 |---|---|
-| Windows 10/11 | `RouteLens_x.y.z_x64-setup.exe` (or the `.msi`) |
-| macOS (Apple Silicon and Intel) | `RouteLens_x.y.z_universal.dmg` |
-| Linux | `RouteLens_x.y.z_amd64.AppImage`, `.deb` or `.rpm` |
+| Windows 10/11 | `RouteLogic_x.y.z_x64-setup.exe` (or the `.msi`) |
+| macOS (Apple Silicon and Intel) | `RouteLogic_x.y.z_universal.dmg` |
+| Linux | `RouteLogic_x.y.z_amd64.AppImage`, `.deb` or `.rpm` |
 
 **The builds are not code-signed** — signing certificates cost money, and this is a free
 project with no income. Each OS will warn once before the first launch:
@@ -184,7 +184,7 @@ project with no income. Each OS will warn once before the first launch:
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
 - **macOS:** "cannot be opened because the developer cannot be verified". **Right-click the
   app → Open → Open**, or allow it under **System Settings → Privacy & Security**.
-- **Linux:** `chmod +x RouteLens_*.AppImage`, or install the `.deb` / `.rpm` with your package
+- **Linux:** `chmod +x RouteLogic_*.AppImage`, or install the `.deb` / `.rpm` with your package
   manager.
 
 If you would rather not run an unsigned binary, build it yourself — the release workflow is
@@ -198,8 +198,8 @@ Requires a stable Rust toolchain, Node 20+, and Tauri's platform prerequisites
 command-line tools on macOS).
 
 ```bash
-git clone https://github.com/AryanMahajan/routelens.git
-cd routelens
+git clone https://github.com/AryanMahajan/routelogic.git
+cd routelogic
 npm install && npm install --prefix ui
 npm run tauri dev
 ```
@@ -260,7 +260,7 @@ UI · tree-sitter parsing for Python, JavaScript and TypeScript · reqwest · SQ
 
 ## FAQ
 
-**Does RouteLens run my project's code?** Not unless you ask. Discovery is static analysis
+**Does RouteLogic run my project's code?** Not unless you ask. Discovery is static analysis
 of the source. Runtime enrich is opt-in, shows you the exact command before running it, and
 remembers the decision per project until you withdraw it.
 
@@ -275,5 +275,5 @@ Environment files reference them by name only. See [security](docs/security.md).
 
 ## License
 
-[MIT](LICENSE). Free to use, modify and redistribute — commercially or otherwise. RouteLens
+[MIT](LICENSE). Free to use, modify and redistribute — commercially or otherwise. RouteLogic
 has no paid tier, no accounts, no telemetry, and no cloud; it never will.

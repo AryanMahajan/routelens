@@ -1,6 +1,6 @@
-# RouteLens documentation
+# RouteLogic documentation
 
-RouteLens is a local-first API client that discovers HTTP endpoints from a project's source
+RouteLogic is a local-first API client that discovers HTTP endpoints from a project's source
 code — FastAPI, Express and Next.js today — and lets you test them immediately. These pages
 cover how to run it, how discovery works, what each framework adapter handles and misses,
 and how the workspace is stored.
@@ -28,7 +28,7 @@ Live phase tracking, including what slipped and why, lives in `docs/internal/roa
 
 ## Reading order
 
-**If you want to use RouteLens**
+**If you want to use RouteLogic**
 
 1. [Getting started](getting-started.md) — install, open a project, send a request
 2. [Concepts](concepts.md) — the two core types and why there are two
@@ -50,7 +50,7 @@ Live phase tracking, including what slipped and why, lives in `docs/internal/roa
 
 ## Documentation tiers
 
-- **`README.md`** (repo root) — what RouteLens is, for someone who has never seen it.
+- **`README.md`** (repo root) — what RouteLogic is, for someone who has never seen it.
 - **`docs/`** — committed, public, kept in sync with the code.
 - **`docs/internal/`** — gitignored working notes: decision records, parsing spikes, live
   roadmap. Messy on purpose; nothing there is a promise.
