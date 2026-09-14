@@ -92,9 +92,10 @@ Extracted values are committed only when the step passed.
 ### Running part of a flow
 
 **▶ Run all** with nothing selected runs every card from the roots. Select a card and the
-same button becomes **▶ Run connected (n)**: only the cards wired to the selected one —
+same button becomes **▶ Run connected (n)**: only the *n* cards wired to the selected one —
 in either direction, however far — run, and the islands elsewhere on the canvas are left
-alone. Both include every input block, so the flow's variables are always in scope.
+alone. A card wired to nothing shows **▶ Run selected**. Both include every input block, so
+the flow's variables are always in scope (they are not counted in the *n*; they are implied).
 
 **▶ Step** in the inspector (or `Ctrl+Shift+Enter`) runs the selected card on its own. The
 steps before it are taken as done, and the variables from the last run stand in for what

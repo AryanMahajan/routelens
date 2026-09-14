@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  connectedComponent,
   hasCycle,
   nodeLabel,
   runScope,
@@ -60,8 +61,11 @@ export function FlowEditor({
   const cyclic = useMemo(() => hasCycle(flow), [flow]);
   const node = selected ? (flow.nodes.find((n) => n.id === selected) ?? null) : null;
   // With a card selected, Run covers the group wired to it — not the islands elsewhere.
+  // The count on the button is that group alone: the flow's input blocks join every run
+  // implicitly and are not what the user is choosing.
   const connected = node ? runScope(flow, "connected", node.id) : null;
   const partial = connected !== null && connected.length < flow.nodes.length;
+  const wired = node ? connectedComponent(flow, node.id).size : 0;
 
   const labels = useMemo(() => {
     const out: Record<string, string> = {};
@@ -107,13 +111,21 @@ export function FlowEditor({
           title={
             cyclic
               ? "The flow has a cycle"
-              : partial
-                ? `Run the ${connected.length} cards wired to the selected one (Ctrl+Enter). Click empty canvas first to run everything.`
-                : "Run every card (Ctrl+Enter)"
+              : partial && wired === 1
+                ? "Run the selected card — it is not wired to anything (Ctrl+Enter). Click empty canvas first to run everything."
+                : partial
+                  ? `Run the ${wired} cards wired together with the selected one (Ctrl+Enter). Click empty canvas first to run everything.`
+                  : "Run every card (Ctrl+Enter)"
           }
           className="shrink-0 rounded bg-accent px-4 py-1 font-semibold text-ground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {running ? "Running…" : partial ? `▶ Run connected (${connected.length})` : "▶ Run all"}
+          {running
+            ? "Running…"
+            : partial && wired === 1
+              ? "▶ Run selected"
+              : partial
+                ? `▶ Run connected (${wired})`
+                : "▶ Run all"}
         </button>
 
         <button
