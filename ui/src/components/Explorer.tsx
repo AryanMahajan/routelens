@@ -3,6 +3,7 @@ import { api, CoreError } from "../api";
 import type { EndpointSpec, ScanResult } from "../types";
 import { ENDPOINT_DRAG_TYPE } from "./flow/FlowCanvas";
 import { MethodBadge } from "./MethodBadge";
+import { displayName, FolderRow, TreeRow } from "./Tree";
 
 /**
  * The endpoint tree — the thing no other API client does.
@@ -178,17 +179,13 @@ export function Explorer({
         )}
 
         {groups.map(([group, endpoints]) => (
-          <div key={group} className="mb-2">
-            <button
-              onClick={() => toggle(group)}
-              className="flex w-full items-center gap-1 px-1 py-1 text-[11px] font-semibold
-                uppercase tracking-wider text-muted transition hover:text-ink"
-            >
-              <span className="inline-block w-3">{collapsed.has(group) ? "▸" : "▾"}</span>
-              {group}
-              <span className="ml-auto font-normal tabular-nums">{endpoints.length}</span>
-            </button>
-
+          <div key={group}>
+            <FolderRow
+              open={!collapsed.has(group)}
+              name={displayName(group)}
+              count={endpoints.length}
+              onToggle={() => toggle(group)}
+            />
             {!collapsed.has(group) &&
               endpoints.map((endpoint) => (
                 <EndpointRow
@@ -227,8 +224,8 @@ function EndpointRow({
   }
 
   return (
-    <div
-      className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-raised"
+    <TreeRow
+      depth={1}
       draggable={!endpoint.unresolved}
       onDragStart={(event) => {
         // Dropping onto a flow canvas adds the endpoint as a step.
@@ -246,9 +243,9 @@ function EndpointRow({
               ? "Add to the open flow — or drag it onto the canvas"
               : (endpoint.summary ?? endpoint.display)
         }
-        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 text-left disabled:cursor-not-allowed"
       >
-        <MethodBadge method={endpoint.method} className="w-12 shrink-0 text-right" />
+        <MethodBadge method={endpoint.method} className="w-11 shrink-0" />
         <span
           className={`min-w-0 flex-1 truncate font-mono ${
             endpoint.unresolved ? "text-muted" : ""
@@ -310,6 +307,6 @@ function EndpointRow({
           {revealError ? "✕" : "↗"}
         </button>
       )}
-    </div>
+    </TreeRow>
   );
 }

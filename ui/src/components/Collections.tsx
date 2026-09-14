@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { api, CoreError } from "../api";
 import type { Collection, RequestDraft } from "../types";
 import { MethodBadge } from "./MethodBadge";
+import { FolderRow, TreeRow } from "./Tree";
 
 /**
  * Saved requests, as the files they live in: one collection per file, folders as a path on
@@ -315,8 +316,12 @@ function CollectionBlock({
             const isOver = over === folderKey;
             return (
               <div key={folderKey}>
-                <button
-                  onClick={() => toggle(folderKey)}
+                <FolderRow
+                  depth={depth}
+                  open={!collapsed.has(folderKey)}
+                  name={name}
+                  count={countRequests(child)}
+                  onToggle={() => toggle(folderKey)}
                   onDragOver={(e) => {
                     if (!dragging) return;
                     e.preventDefault();
@@ -327,17 +332,8 @@ function CollectionBlock({
                     e.preventDefault();
                     onDrop({ collection: collection.name, folder: folderPath });
                   }}
-                  style={{ paddingLeft: 8 + depth * 12 }}
-                  className={`flex w-full items-center gap-1 rounded py-1 text-left text-[12px] text-muted transition hover:text-ink ${
-                    isOver ? "bg-accent/15 ring-1 ring-accent" : ""
-                  }`}
-                >
-                  <span className="inline-block w-3">{collapsed.has(folderKey) ? "▸" : "▾"}</span>
-                  <span className="truncate">{name}</span>
-                  <span className="ml-auto pr-1 font-normal tabular-nums">
-                    {countRequests(child)}
-                  </span>
-                </button>
+                  className={isOver ? "bg-accent/15 ring-1 ring-accent" : ""}
+                />
                 {!collapsed.has(folderKey) && renderNode(child, folderPath, depth + 1)}
               </div>
             );
@@ -347,8 +343,9 @@ function CollectionBlock({
           const rowKey = `r:${request.id}`;
           const isOver = over === rowKey;
           return (
-            <div
+            <TreeRow
               key={request.id}
+              depth={depth}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
@@ -365,21 +362,20 @@ function CollectionBlock({
                 e.preventDefault();
                 onDrop({ collection: collection.name, folder: path || null, before: request.id });
               }}
-              style={{ paddingLeft: 8 + depth * 12 }}
-              className={`group flex items-center gap-2 rounded py-1.5 pr-1 transition hover:bg-raised ${
-                isOver ? "border-t-2 border-accent" : "border-t-2 border-transparent"
-              } ${dragging?.id === request.id ? "opacity-40" : ""}`}
+              className={`${isOver ? "shadow-[inset_0_2px_0_0_var(--color-accent)]" : ""} ${
+                dragging?.id === request.id ? "opacity-40" : ""
+              }`}
             >
               <button
                 onClick={() => onOpenRequest(request)}
                 title={request.url}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                className="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 text-left"
               >
-                <MethodBadge method={request.method} className="w-12 shrink-0 text-right" />
+                <MethodBadge method={request.method} className="w-11 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{request.name ?? request.url}</span>
               </button>
               <Menu items={requestMenu(request)} />
-            </div>
+            </TreeRow>
           );
         })}
       </>
@@ -401,27 +397,24 @@ function CollectionBlock({
           e.preventDefault();
           onDrop({ collection: collection.name, folder: null });
         }}
-        className={`group flex items-center gap-1 rounded px-1 ${
-          headerOver ? "bg-accent/15 ring-1 ring-accent" : ""
-        }`}
+        className={`rounded ${headerOver ? "bg-accent/15 ring-1 ring-accent" : ""}`}
       >
-        <button
-          onClick={() => toggle(key)}
-          className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left text-[11px] font-semibold uppercase tracking-wider text-muted transition hover:text-ink"
-        >
-          <span className="inline-block w-3">{collapsed.has(key) ? "▸" : "▾"}</span>
-          <span className="truncate">{collection.name}</span>
-          <span className="ml-auto font-normal tabular-nums">{collection.requests.length}</span>
-        </button>
-        <Menu items={collectionMenu} />
+        <FolderRow
+          open={!collapsed.has(key)}
+          name={collection.name}
+          count={collection.requests.length}
+          onToggle={() => toggle(key)}
+          className="font-medium"
+          trailing={<Menu items={collectionMenu} />}
+        />
       </div>
 
       {!collapsed.has(key) && (
-        <div className="px-1">
+        <div>
           {collection.requests.length === 0 && (
-            <p className="px-2 py-1 text-[11px] text-muted">Empty — drop a request here.</p>
+            <p className="py-1 pl-9 text-[11px] text-muted">Empty — drop a request here.</p>
           )}
-          {renderNode(root, "", 0)}
+          {renderNode(root, "", 1)}
         </div>
       )}
     </div>
