@@ -213,3 +213,29 @@ button {
   stroke-dasharray: 5 5;
   opacity: 0.45;
 }
+
+/* --- code view: response bodies ------------------------------------------------------- */
+
+.rl-code {
+  --tok-key: #9cc4ff;
+  --tok-string: #f0a56c;
+  --tok-number: #b5e88a;
+  --tok-boolean: #d7a0ff;
+  --tok-null: #9a9aa7;
+}
+:root[data-theme="light"] .rl-code,
+html[data-theme="light"] .rl-code {
+  --tok-key: #1d4ed8;
+  --tok-string: #b45309;
+  --tok-number: #15803d;
+  --tok-boolean: #7e22ce;
+  --tok-null: #6a6a78;
+}
+.rl-tok-key { color: var(--tok-key); }
+.rl-tok-string { color: var(--tok-string); }
+.rl-tok-number { color: var(--tok-number); }
+.rl-tok-boolean { color: var(--tok-boolean); }
+.rl-tok-null { color: var(--tok-null); font-style: italic; }
+.rl-tok-punct { color: var(--t-muted); }
+.rl-match { background: color-mix(in srgb, var(--t-post) 35%, transparent); color: inherit; border-radius: 2px; }
+.rl-match-active { background: var(--t-post); color: #1c1c21; border-radius: 2px; }

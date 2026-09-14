@@ -41,6 +41,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TabStrip } from "./components/TabStrip";
 
 const SIDEBAR_WIDTH = 288;
+const RESPONSE_HEIGHT = 360;
 
 /** One open request. Everything a tab shows lives here, so switching tabs loses nothing. */
 interface RequestTab {
@@ -128,6 +129,7 @@ export default function App() {
   // tree, a laptop wants the canvas.
   const [sidebarWidth, setSidebarWidth] = usePersistedNumber("routelogic.sidebar.width", SIDEBAR_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedFlag("routelogic.sidebar.collapsed", false);
+  const [responseHeight, setResponseHeight] = usePersistedNumber("routelogic.response.height", RESPONSE_HEIGHT);
 
   // Anything that wrote to the workspace: reload the collection/environment names as
   // well as the panels, or a collection created just now is never listed.
@@ -636,7 +638,15 @@ export default function App() {
                 sending={active.sending}
               />
 
-              <div className="flex min-h-0 flex-[1.2] flex-col">
+              <ResizeHandle
+                width={responseHeight}
+                min={120}
+                max={Math.max(240, window.innerHeight - 260)}
+                grows="up"
+                onChange={setResponseHeight}
+                onReset={() => setResponseHeight(RESPONSE_HEIGHT)}
+              />
+              <div style={{ height: responseHeight }} className="flex min-h-0 shrink-0 flex-col">
                 <ResponseViewer exchange={active.exchange} error={active.error} sending={active.sending} />
               </div>
             </>

@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from "react";
  *
  * `grows` says which way the pane gets bigger: `"right"` for a pane on the left whose
  * handle sits on its right edge (the sidebar), `"left"` for a pane on the right whose
- * handle sits on its left edge (the inspector). Double-click resets.
+ * handle sits on its left edge (the inspector), `"up"` for a pane below the handle (the
+ * response), `"down"` for one above it. `width` is the pane's size along that axis.
+ * Double-click resets.
  */
 export function ResizeHandle({
   width,
@@ -18,24 +20,26 @@ export function ResizeHandle({
   width: number;
   min: number;
   max: number;
-  grows: "left" | "right";
+  grows: "left" | "right" | "up" | "down";
   onChange: (width: number) => void;
   onReset?: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const vertical = grows === "up" || grows === "down";
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const startX = event.clientX;
+      const start = vertical ? event.clientY : event.clientX;
       const startWidth = width;
-      const sign = grows === "right" ? 1 : -1;
+      const sign = grows === "right" || grows === "down" ? 1 : -1;
       const target = event.currentTarget;
       target.setPointerCapture(event.pointerId);
       setDragging(true);
 
       const move = (e: PointerEvent) => {
-        const next = Math.round(startWidth + sign * (e.clientX - startX));
+        const at = vertical ? e.clientY : e.clientX;
+        const next = Math.round(startWidth + sign * (at - start));
         onChange(Math.min(max, Math.max(min, next)));
       };
       const up = () => {
@@ -48,7 +52,7 @@ export function ResizeHandle({
       target.addEventListener("pointerup", up);
       target.addEventListener("pointercancel", up);
     },
-    [width, min, max, grows, onChange],
+    [width, min, max, grows, vertical, onChange],
   );
 
   // Text would get selected all over the place while dragging otherwise.
@@ -56,12 +60,31 @@ export function ResizeHandle({
     if (!dragging) return;
     const previous = document.body.style.userSelect;
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = vertical ? "row-resize" : "col-resize";
     return () => {
       document.body.style.userSelect = previous;
       document.body.style.cursor = "";
     };
-  }, [dragging]);
+  }, [dragging, vertical]);
+
+  if (vertical) {
+    return (
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        title="Drag to resize · double-click to reset"
+        onPointerDown={onPointerDown}
+        onDoubleClick={onReset}
+        className={`group relative z-10 h-1 shrink-0 cursor-row-resize select-none
+          ${grows === "down" ? "-mb-1" : "-mt-1"}`}
+      >
+        <div
+          className={`absolute inset-x-0 top-0 h-1 transition-colors
+            ${dragging ? "bg-accent" : "bg-transparent group-hover:bg-accent/60"}`}
+        />
+      </div>
+    );
+  }
 
   return (
     <div

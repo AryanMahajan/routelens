@@ -1,8 +1,14 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Exchange } from "../types";
+import { CodeView } from "./CodeView";
+import { usePersistedFlag } from "./ResizeHandle";
 
 type Tab = "body" | "headers" | "timing" | "sent";
 
+/**
+ * The response: status, time and size in the header; a coloured, numbered, searchable
+ * body; the headers as a table; timing; and what was actually sent.
+ */
 export function ResponseViewer({
   exchange,
   error,
@@ -14,7 +20,12 @@ export function ResponseViewer({
 }) {
   const [tab, setTab] = useState<Tab>("body");
   const [raw, setRaw] = useState(false);
+  const [wrap, setWrap] = usePersistedFlag("routelogic.response.wrap", true);
   const [copied, setCopied] = useState(false);
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState(0);
+  const [active, setActive] = useState(0);
+  const onMatchCount = useCallback((n: number) => setMatches(n), []);
 
   const pretty = useMemo(() => {
     if (!exchange) return null;
@@ -25,13 +36,18 @@ export function ResponseViewer({
     }
   }, [exchange]);
 
+  // A new response: back to the first match.
+  useEffect(() => {
+    setActive(0);
+  }, [exchange, query]);
+
   if (sending) {
     return <Placeholder>Sending…</Placeholder>;
   }
 
   if (error) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto border-t border-edge p-4">
         <h3 className="mb-2 font-semibold text-method-delete">Request failed</h3>
         <pre className="whitespace-pre-wrap rounded border border-method-delete/30 bg-method-delete/5 p-3 font-mono text-method-delete">
           {error}
@@ -45,46 +61,69 @@ export function ResponseViewer({
   }
 
   const { response } = exchange;
-  const statusColour =
+  const tone =
     response.status < 300
-      ? "text-method-get"
+      ? "bg-method-get/15 text-method-get"
       : response.status < 400
-        ? "text-method-put"
-        : "text-method-delete";
+        ? "bg-method-put/15 text-method-put"
+        : "bg-method-delete/15 text-method-delete";
 
   const size = response.body.reported_length ?? response.body.bytes.length;
+  const shown = (raw ? null : pretty) ?? response.body.bytes;
+  const language = !raw && pretty ? "json" : "text";
+
+  function step(delta: number) {
+    if (matches === 0) return;
+    setActive((a) => (a + delta + matches) % matches);
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col border-t border-edge">
-      {/* Status line */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-edge px-3 py-2">
-        <span className={`font-mono font-bold ${statusColour}`}>
-          {response.status} {response.status_text}
-        </span>
-        <span className="text-muted tabular-nums">{response.timing.total_ms} ms</span>
-        <span className="text-muted tabular-nums">{formatBytes(size)}</span>
+      {/* Tabs, with the verdict on the right */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-edge px-3">
+        {(["body", "headers", "timing", "sent"] as Tab[]).map((name) => (
+          <button
+            key={name}
+            onClick={() => setTab(name)}
+            className={`relative px-3 py-2 capitalize transition
+              ${tab === name ? "text-ink" : "text-muted hover:text-ink"}`}
+          >
+            {name === "sent" ? "Sent request" : name}
+            {name === "headers" && (
+              <span className="ml-1 text-[11px] tabular-nums text-muted">({response.headers.length})</span>
+            )}
+            {tab === name && (
+              <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" />
+            )}
+          </button>
+        ))}
 
-        {response.insecure && (
-          <span
-            className="rounded bg-method-delete/15 px-1.5 py-0.5 text-[11px] text-method-delete"
-            title="Certificate verification was disabled for this request"
-          >
-            insecure
+        <div className="ml-auto flex items-center gap-3 py-1.5 text-[11px]">
+          <span className={`rounded px-2 py-0.5 font-mono font-bold ${tone}`}>
+            {response.status} {response.status_text}
           </span>
-        )}
-        {response.body.truncated && (
-          <span className="rounded bg-method-post/15 px-1.5 py-0.5 text-[11px] text-method-post">
-            truncated
-          </span>
-        )}
-        {response.body.content_encoding && (
-          <span
-            className="rounded bg-raised px-1.5 py-0.5 text-[11px] text-muted"
-            title="Decoded automatically; the raw bytes on the wire were compressed"
-          >
-            {response.body.content_encoding}
-          </span>
-        )}
+          <span className="text-muted tabular-nums">{response.timing.total_ms} ms</span>
+          <span className="text-muted tabular-nums">{formatBytes(size)}</span>
+          {response.insecure && (
+            <span
+              className="rounded bg-method-delete/15 px-1.5 py-0.5 text-method-delete"
+              title="Certificate verification was disabled for this request"
+            >
+              insecure
+            </span>
+          )}
+          {response.body.truncated && (
+            <span className="rounded bg-method-post/15 px-1.5 py-0.5 text-method-post">truncated</span>
+          )}
+          {response.body.content_encoding && (
+            <span
+              className="rounded bg-raised px-1.5 py-0.5 text-muted"
+              title="Decoded automatically; the raw bytes on the wire were compressed"
+            >
+              {response.body.content_encoding}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Redirect chain — worth showing, because credentials may have been dropped mid-way. */}
@@ -106,55 +145,89 @@ export function ResponseViewer({
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-edge px-3">
-        {(["body", "headers", "timing", "sent"] as Tab[]).map((name) => (
+      {tab === "body" && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-edge px-3 py-1.5 text-[11px]">
+          <span className="flex overflow-hidden rounded border border-edge">
+            <button
+              onClick={() => setRaw(false)}
+              disabled={!pretty}
+              title={pretty ? "Formatted JSON" : "The body is not JSON"}
+              className={`px-2 py-0.5 font-mono transition disabled:opacity-40 ${!raw && pretty ? "bg-raised text-ink" : "text-muted hover:text-ink"}`}
+            >
+              {"{ }"} JSON
+            </button>
+            <button
+              onClick={() => setRaw(true)}
+              className={`border-l border-edge px-2 py-0.5 transition ${raw || !pretty ? "bg-raised text-ink" : "text-muted hover:text-ink"}`}
+            >
+              Raw
+            </button>
+          </span>
           <button
-            key={name}
-            onClick={() => setTab(name)}
-            className={`relative px-3 py-2 capitalize transition
-              ${tab === name ? "text-ink" : "text-muted hover:text-ink"}`}
+            onClick={() => setWrap(!wrap)}
+            title={wrap ? "Long lines wrap — click for one line each" : "Long lines run on — click to wrap"}
+            className={`rounded px-2 py-0.5 transition ${wrap ? "bg-raised text-ink" : "text-muted hover:text-ink"}`}
           >
-            {name === "sent" ? "sent request" : name}
-            {tab === name && (
-              <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" />
-            )}
+            ⤶ Wrap
           </button>
-        ))}
 
-        {tab === "body" && (
-          <div className="ml-auto flex items-center gap-1">
-            {pretty && (
-              <button
-                onClick={() => setRaw(!raw)}
-                className="rounded px-2 py-1 text-muted transition hover:bg-raised hover:text-ink"
-              >
-                {raw ? "Pretty" : "Raw"}
-              </button>
+          <span className="ml-auto flex items-center gap-1">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") step(e.shiftKey ? -1 : 1);
+                if (e.key === "Escape") setQuery("");
+              }}
+              placeholder="Find in body…"
+              spellCheck={false}
+              className="w-40 rounded border border-edge bg-ground px-2 py-0.5 outline-none placeholder:text-muted/60 focus:border-accent"
+            />
+            {query && (
+              <>
+                <span className="w-14 text-right tabular-nums text-muted">
+                  {matches === 0 ? "0 of 0" : `${active + 1} of ${matches}`}
+                </span>
+                <button onClick={() => step(-1)} disabled={matches === 0} title="Previous (Shift+Enter)" className={iconButton}>
+                  ↑
+                </button>
+                <button onClick={() => step(1)} disabled={matches === 0} title="Next (Enter)" className={iconButton}>
+                  ↓
+                </button>
+              </>
             )}
             <button
               onClick={() => {
-                const text = (raw ? null : pretty) ?? response.body.bytes;
-                void navigator.clipboard.writeText(text).then(() => {
+                void navigator.clipboard.writeText(shown).then(() => {
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1200);
                 });
               }}
               title="Copy the body as shown"
-              className="rounded px-2 py-1 text-muted transition hover:bg-raised hover:text-ink"
+              className={iconButton}
             >
               {copied ? "Copied" : "Copy"}
             </button>
-          </div>
-        )}
-      </div>
+          </span>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "body" && (
-          <pre className="whitespace-pre-wrap break-all p-3 font-mono leading-relaxed">
-            {(raw ? null : pretty) ?? response.body.bytes}
-          </pre>
-        )}
+        {tab === "body" &&
+          (response.body.bytes.length === 0 ? (
+            <p className="p-4 text-muted italic">Empty body.</p>
+          ) : (
+            <div className="p-2">
+              <CodeView
+                text={shown}
+                language={language}
+                wrap={wrap}
+                query={query}
+                activeMatch={active}
+                onMatchCount={onMatchCount}
+              />
+            </div>
+          ))}
 
         {tab === "headers" && <HeaderTable headers={response.headers} />}
 
@@ -183,15 +256,41 @@ export function ResponseViewer({
             </p>
             <HeaderTable headers={exchange.request.headers} />
             {exchange.request.body_preview && (
-              <pre className="mt-3 whitespace-pre-wrap break-all rounded border border-edge bg-panel p-3 font-mono">
-                {exchange.request.body_preview}
-              </pre>
+              <div className="mt-3 rounded border border-edge bg-panel p-2">
+                <CodeView
+                  text={prettyIfJson(exchange.request.body_preview)}
+                  language={isJson(exchange.request.body_preview) ? "json" : "text"}
+                  wrap
+                  query=""
+                  activeMatch={0}
+                />
+              </div>
             )}
           </div>
         )}
       </div>
     </section>
   );
+}
+
+const iconButton =
+  "rounded px-2 py-0.5 text-muted transition hover:bg-raised hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent";
+
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function prettyIfJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
 }
 
 function HeaderTable({ headers }: { headers: [string, string][] }) {
@@ -203,7 +302,7 @@ function HeaderTable({ headers }: { headers: [string, string][] }) {
       <tbody>
         {headers.map(([name, value], i) => (
           <tr key={i} className="border-b border-edge/50 align-top last:border-0">
-            <td className="w-1/3 py-1.5 pl-3 pr-4 text-muted">{name}</td>
+            <td className="w-1/3 py-1.5 pl-3 pr-4 text-accent">{name}</td>
             <td className="break-all py-1.5 pr-3">{value}</td>
           </tr>
         ))}
