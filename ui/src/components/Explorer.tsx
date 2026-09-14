@@ -84,7 +84,10 @@ export function Explorer({
     );
   }
 
-  const gaps = scan.endpoints.filter((e) => e.unresolved || e.orphaned).length;
+  // Two different things go wrong, and they are counted apart: a *gap* is a path with a
+  // part that could not be worked out; an *orphan* is a route on a router nothing mounts.
+  const gaps = scan.endpoints.filter((e) => e.unresolved).length;
+  const orphans = scan.endpoints.filter((e) => e.orphaned && !e.unresolved).length;
 
   return (
     <div className="flex min-h-0 flex-col">
@@ -144,16 +147,23 @@ export function Explorer({
           </p>
         )}
 
-        {gaps > 0 && (
+        {(gaps > 0 || orphans > 0) && (
           <p
             className="rounded border border-method-post/30 bg-method-post/5 px-2 py-1 text-[11px] text-method-post"
-            title={
-              scan.enrichable
-                ? "Static analysis could not fully determine these. \"Ask the app\" resolves most of them."
-                : "Static analysis could not fully determine these."
-            }
+            title={[
+              gaps > 0 &&
+                `${gaps === 1 ? "A path has" : `${gaps} paths have`} a part static analysis could not work out, shown as "?".${
+                  scan.enrichable ? ' "Ask the app" resolves most of these.' : ""
+                }`,
+              orphans > 0 &&
+                `${orphans === 1 ? "A route is" : `${orphans} routes are`} on a router nothing mounts, so the application may not serve ${orphans === 1 ? "it" : "them"}.`,
+            ]
+              .filter(Boolean)
+              .join("\n")}
           >
-            {gaps} endpoint{gaps === 1 ? " has" : "s have"} gaps
+            {gaps > 0 && `${gaps} endpoint${gaps === 1 ? " has" : "s have"} a gap`}
+            {gaps > 0 && orphans > 0 && " · "}
+            {orphans > 0 && `${orphans} on ${orphans === 1 ? "an unmounted router" : "unmounted routers"}`}
           </p>
         )}
       </div>
