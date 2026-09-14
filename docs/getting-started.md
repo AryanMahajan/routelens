@@ -14,7 +14,8 @@ The builds are **unsigned**, so the first launch is met with a warning:
 | OS | What you see | What to do |
 |---|---|---|
 | Windows | SmartScreen: "Windows protected your PC" | **More info → Run anyway** |
-| macOS | "cannot be opened because the developer cannot be verified" | **Right-click → Open → Open**, or **System Settings → Privacy & Security → Open Anyway** |
+| macOS | "Apple could not verify … is free of malware" | Dismiss it, then **System Settings → Privacy & Security → Open Anyway** (right-click → Open also works on macOS 14 and earlier) |
+| macOS | "… is damaged and can't be opened" | The quarantine flag on an unsigned download. Run `xattr -cr /Applications/RouteLogic.app` in Terminal, then open it again |
 | Linux | AppImage is not executable | `chmod +x RouteLogic_*.AppImage` |
 
 The warning appears once per install. Signing will come when the project can afford

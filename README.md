@@ -182,8 +182,10 @@ Download the build for your platform from the
 project with no income. Each OS will warn once before the first launch:
 
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
-- **macOS:** "cannot be opened because the developer cannot be verified". **Right-click the
-  app → Open → Open**, or allow it under **System Settings → Privacy & Security**.
+- **macOS:** "Apple could not verify … is free of malware". Dismiss it, then **System
+  Settings → Privacy & Security → Open Anyway**. If it says the app is *damaged*, that is the
+  quarantine flag on an unsigned download: `xattr -cr /Applications/RouteLogic.app`, then open
+  it again.
 - **Linux:** `chmod +x RouteLogic_*.AppImage`, or install the `.deb` / `.rpm` with your package
   manager.
 

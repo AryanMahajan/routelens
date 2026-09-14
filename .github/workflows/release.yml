@@ -76,6 +76,11 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No Developer ID certificate, so the macOS build is signed ad hoc ("-"). Without
+          # any signature at all, Gatekeeper reports a downloaded Apple Silicon app as
+          # "damaged" and refuses to open it; with an ad-hoc one it says the developer
+          # cannot be verified, which System Settings > Privacy & Security lets through.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
           # On a manual run there is no tag; fall back to the version in tauri.conf.json.
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
@@ -85,8 +90,9 @@ jobs:
             are not. Your OS will warn before the first launch:
 
             - **Windows:** SmartScreen — click *More info* → *Run anyway*.
-            - **macOS:** right-click the app → *Open* → *Open*, or allow it under
-              *System Settings → Privacy & Security*.
+            - **macOS:** open it once, dismiss the dialog, then *System Settings →
+              Privacy & Security → Open Anyway*. If it says the app is "damaged", run
+              `xattr -cr /Applications/RouteLogic.app` and open it again.
             - **Linux:** `chmod +x` the AppImage, or install the `.deb` / `.rpm`.
 
             See the [getting started guide](https://github.com/AryanMahajan/routelogic/blob/main/docs/getting-started.md).
