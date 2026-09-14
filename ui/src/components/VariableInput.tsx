@@ -1,22 +1,29 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type InputHTMLAttributes,
   type KeyboardEvent,
   type RefObject,
   type TextareaHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
 import { useVariableNames } from "../variables";
 
 /**
  * `{{variable}}` completion for a text field.
  *
- * Type `{{` anywhere and the variables in scope appear; pick one with the arrow keys and
- * Enter or Tab. Everything else behaves like a plain field. `VariableInput` is the
- * single-line form for the URL bar, path parameters, headers and auth; `VariableTextarea`
- * is the same thing for a body.
+ * Type `{{` anywhere — or press Ctrl+Space — and the variables in scope appear; pick one
+ * with the arrow keys and Enter or Tab. Everything else behaves like a plain field.
+ * `VariableInput` is the single-line form for the URL bar, path parameters, headers and
+ * auth; `VariableTextarea` is the same thing for a body.
+ *
+ * The list is rendered at the top of the document, positioned under the field, rather than
+ * inside it: the fields live in scrolling panes and stacked panels, any of which could
+ * otherwise clip it.
  */
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
@@ -32,6 +39,7 @@ function useCompletion(
   // Where the `{{` that opened the popup starts, so the completion replaces the right span.
   const [anchor, setAnchor] = useState<number | null>(null);
   const [partial, setPartial] = useState("");
+  const [place, setPlace] = useState<CSSProperties>({});
 
   const matches = open
     ? names.filter((n) => n.toLowerCase().startsWith(partial.toLowerCase()))
@@ -40,6 +48,33 @@ function useCompletion(
   useEffect(() => {
     if (selected >= matches.length) setSelected(0);
   }, [matches.length, selected]);
+
+  // Under the field, or above it when there is no room below; closes if the pane scrolls,
+  // since it would otherwise hang where the field used to be.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const element = field.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const height = Math.min(224, 32 * Math.max(matches.length, 1) + 8);
+    const below = rect.bottom + 4 + height <= window.innerHeight;
+    setPlace({
+      position: "fixed",
+      left: Math.min(rect.left, Math.max(0, window.innerWidth - 240)),
+      top: below ? rect.bottom + 4 : undefined,
+      bottom: below ? undefined : window.innerHeight - rect.top + 4,
+      minWidth: Math.min(Math.max(192, rect.width), window.innerWidth - 16),
+    });
+    const close = (event: Event) => {
+      if (event.target !== element) setOpen(false);
+    };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open, matches.length, field]);
 
   function inspect(text: string, caret: number) {
     const before = text.slice(0, caret);
@@ -65,6 +100,24 @@ function useCompletion(
     inspect(event.target.value, event.target.selectionStart ?? event.target.value.length);
   }
 
+  /** Ctrl+Space: open the list at the caret, typing the `{{` if it is not there already. */
+  function summon() {
+    const element = field.current;
+    const caret = element?.selectionStart ?? value.length;
+    const before = value.slice(0, caret);
+    const start = before.lastIndexOf("{{");
+    if (start !== -1 && before.lastIndexOf("}}") < start && !/\s/.test(before.slice(start + 2))) {
+      inspect(value, caret);
+      return;
+    }
+    const next = `${before}{{${value.slice(caret)}`;
+    onChange(next);
+    setAnchor(caret);
+    setPartial("");
+    setOpen(true);
+    requestAnimationFrame(() => element?.setSelectionRange(caret + 2, caret + 2));
+  }
+
   function complete(name: string) {
     if (anchor === null) return;
     const caret = field.current?.selectionStart ?? value.length;
@@ -80,6 +133,11 @@ function useCompletion(
 
   /** Returns true when the key was consumed by the popup. */
   function handleKeyDown(event: KeyboardEvent<Field>): boolean {
+    if (event.ctrlKey && event.key === " ") {
+      event.preventDefault();
+      summon();
+      return true;
+    }
     if (open && matches.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -104,36 +162,39 @@ function useCompletion(
     return false;
   }
 
-  const popup = open ? (
-    <ul
-      className="absolute left-0 top-full z-30 mt-1 max-h-56 min-w-48 overflow-auto rounded
-        border border-edge bg-panel py-1 shadow-lg"
-      role="listbox"
-    >
-      {matches.length === 0 && (
-        <li className="px-3 py-1.5 text-muted italic">
-          {names.length === 0 ? "No variables defined yet" : "No match"}
-        </li>
-      )}
-      {matches.map((name, index) => (
-        <li
-          key={name}
-          role="option"
-          aria-selected={index === selected}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            complete(name);
-          }}
-          onMouseEnter={() => setSelected(index)}
-          className={`cursor-pointer px-3 py-1 font-mono ${
-            index === selected ? "bg-raised text-ink" : "text-muted"
-          }`}
+  const popup = open
+    ? createPortal(
+        <ul
+          style={place}
+          className="z-50 max-h-56 overflow-auto rounded border border-edge bg-panel py-1 shadow-lg"
+          role="listbox"
         >
-          {name}
-        </li>
-      ))}
-    </ul>
-  ) : null;
+          {matches.length === 0 && (
+            <li className="px-3 py-1.5 text-muted italic">
+              {names.length === 0 ? "No variables in scope yet" : "No match"}
+            </li>
+          )}
+          {matches.map((name, index) => (
+            <li
+              key={name}
+              role="option"
+              aria-selected={index === selected}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                complete(name);
+              }}
+              onMouseEnter={() => setSelected(index)}
+              className={`cursor-pointer px-3 py-1 font-mono ${
+                index === selected ? "bg-raised text-ink" : "text-muted"
+              }`}
+            >
+              {name}
+            </li>
+          ))}
+        </ul>,
+        document.body,
+      )
+    : null;
 
   return {
     popup,
@@ -148,6 +209,7 @@ export function VariableInput({
   value,
   onChange,
   onKeyDown,
+  onBlur,
   className = "",
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
@@ -166,7 +228,10 @@ export function VariableInput({
         onKeyDown={(e) => {
           if (!c.handleKeyDown(e)) onKeyDown?.(e);
         }}
-        onBlur={c.close}
+        onBlur={(e) => {
+          c.close();
+          onBlur?.(e);
+        }}
         onClick={(e) => c.inspect(value, e.currentTarget.selectionStart ?? value.length)}
         spellCheck={false}
         autoComplete="off"
@@ -182,6 +247,7 @@ export function VariableTextarea({
   value,
   onChange,
   onKeyDown,
+  onBlur,
   className = "",
   ...rest
 }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
@@ -200,7 +266,10 @@ export function VariableTextarea({
         onKeyDown={(e) => {
           if (!c.handleKeyDown(e)) onKeyDown?.(e);
         }}
-        onBlur={c.close}
+        onBlur={(e) => {
+          c.close();
+          onBlur?.(e);
+        }}
         onClick={(e) => c.inspect(value, e.currentTarget.selectionStart ?? value.length)}
         spellCheck={false}
         className={`min-h-0 w-full flex-1 ${className}`}
