@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AuthConfig, BodyValue, RequestDraft } from "../types";
-import { KeyValueEditor } from "./KeyValueEditor";
+import { cellClass, keyCellClass, KeyValueEditor, Row, Table } from "./KeyValueEditor";
 import { methodColour } from "./MethodBadge";
 import { VariableInput, VariableTextarea } from "./VariableInput";
 
@@ -122,10 +122,11 @@ export function RequestEditor({
                 <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                   Path parameters
                 </h3>
-                <div className="flex flex-col gap-1">
+                <Table keyHeading="Parameter" valueHeading="Value">
                   {pathParams.map((name) => (
-                    <label key={name} className="flex items-center gap-2">
-                      <span className="w-2/5 shrink-0 truncate px-2 font-mono text-accent">
+                    <Row key={name}>
+                      <span className="mr-2 size-3.5" />
+                      <span className={`truncate px-2 py-1.5 font-mono text-accent ${keyCellClass}`}>
                         {name}
                       </span>
                       <VariableInput
@@ -139,12 +140,12 @@ export function RequestEditor({
                           })
                         }
                         placeholder="required"
-                        className="rounded border border-edge bg-panel px-2 py-1 font-mono
-                          outline-none placeholder:text-method-delete/60 focus:border-accent"
+                        className={`${cellClass} placeholder:text-method-delete/60`}
                       />
-                    </label>
+                      <span className="w-7" />
+                    </Row>
                   ))}
-                </div>
+                </Table>
               </div>
             )}
 
@@ -152,7 +153,11 @@ export function RequestEditor({
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 Query
               </h3>
-              <KeyValueEditor rows={request.query} onChange={(query) => patch({ query })} />
+              <KeyValueEditor
+                rows={request.query}
+                onChange={(query) => patch({ query })}
+                emptyText="No query parameters."
+              />
             </div>
           </div>
         )}
@@ -162,6 +167,7 @@ export function RequestEditor({
             rows={request.headers}
             onChange={(headers) => patch({ headers })}
             keyPlaceholder="Header-Name"
+            emptyText="No headers beyond what the engine adds."
           />
         )}
 
@@ -177,6 +183,19 @@ export function RequestEditor({
   );
 }
 
+/**
+ * Pretty-print JSON, or say why it cannot be. `{{variables}}` inside strings are fine;
+ * one standing in for a whole value is not JSON yet and is left exactly as typed.
+ */
+export function formatJson(text: string): { formatted: string } | { error: string } {
+  if (!text.trim()) return { formatted: text };
+  try {
+    return { formatted: JSON.stringify(JSON.parse(text), null, 2) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message.replace(/^JSON\.parse: /, "") : String(e) };
+  }
+}
+
 function BodyEditor({
   body,
   onChange,
@@ -185,10 +204,20 @@ function BodyEditor({
   onChange: (body: BodyValue) => void;
 }) {
   const content = body.type === "json" || body.type === "text" ? body.content : "";
+  const json = body.type === "json" ? formatJson(body.content) : null;
+  const unformatted = json !== null && "formatted" in json && json.formatted !== content;
+
+  // A JSON body tidies itself when you leave it, so what was pasted in one line reads as a
+  // document. Anything that does not parse is left alone: half-typed JSON is normal.
+  function tidy() {
+    if (body.type === "json" && json && "formatted" in json && unformatted) {
+      onChange({ ...body, content: json.formatted });
+    }
+  }
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="flex shrink-0 gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         {(["none", "json", "text", "form"] as const).map((kind) => (
           <button
             key={kind}
@@ -205,6 +234,23 @@ function BodyEditor({
             {kind}
           </button>
         ))}
+        {body.type === "json" && json && (
+          <span className="ml-auto flex items-center gap-2 text-[11px]">
+            {"error" in json && content.trim() && (
+              <span className="truncate text-method-post" title={json.error}>
+                not valid JSON yet
+              </span>
+            )}
+            <button
+              onClick={tidy}
+              disabled={!unformatted}
+              title={unformatted ? "Re-indent the body" : "Already formatted"}
+              className="rounded px-2 py-0.5 text-muted transition hover:bg-raised hover:text-ink disabled:opacity-40"
+            >
+              Format
+            </button>
+          </span>
+        )}
       </div>
 
       {body.type === "none" && (
@@ -218,6 +264,7 @@ function BodyEditor({
         <VariableTextarea
           value={body.content}
           onChange={(content) => onChange({ ...body, content })}
+          onBlur={tidy}
           placeholder={body.type === "json" ? '{\n  "name": "Aryan"\n}' : ""}
           className="resize-none rounded border border-edge bg-panel p-3 font-mono
             leading-relaxed outline-none placeholder:text-muted/50 focus:border-accent"
