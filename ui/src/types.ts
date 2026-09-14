@@ -126,7 +126,7 @@ export function normalizeRequest(wire: WireRequestDraft): RequestDraft {
     headers: kv(wire.headers),
     cookies: kv(wire.cookies),
     auth: wire.auth ?? { type: "none" },
-    body: wire.body ?? { type: "none" },
+    body: tidyBody(wire.body ?? { type: "none" }),
     settings: {
       follow_redirects: wire.settings?.follow_redirects ?? false,
       max_redirects: wire.settings?.max_redirects ?? 10,
@@ -134,6 +134,21 @@ export function normalizeRequest(wire: WireRequestDraft): RequestDraft {
       timeout_ms: wire.settings?.timeout_ms ?? 30000,
     },
   };
+}
+
+/**
+ * A JSON body arrives formatted, so a saved or imported one-liner reads as a document
+ * the moment it opens. Done here, before the tab takes its "saved" snapshot, so it does
+ * not count as an edit. Anything that does not parse is left as it is.
+ */
+function tidyBody(body: BodyValue): BodyValue {
+  if (body.type !== "json" || !body.content.trim()) return body;
+  try {
+    const pretty = JSON.stringify(JSON.parse(body.content), null, 2);
+    return pretty === body.content ? body : { ...body, content: pretty };
+  } catch {
+    return body;
+  }
 }
 
 export interface Timing {
