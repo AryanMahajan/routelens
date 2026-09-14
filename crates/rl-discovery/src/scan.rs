@@ -129,6 +129,8 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
 
         warnings.append(&mut sink.warnings.clone());
         sink.warnings.clear();
+        // The graph consumes the sink; models are resolved against the routes afterwards.
+        let models = crate::models::ModelIndex::new(std::mem::take(&mut sink.models));
 
         let graph = RegistrationGraph::build(sink, &known);
         stats.routers_found += graph.router_count();
@@ -145,7 +147,13 @@ pub fn scan_project(project: &ProjectContext) -> Result<ScanResult> {
         }
 
         for route in resolution.routes {
-            endpoints.push(to_spec(adapter.as_ref(), &route));
+            let mut spec = to_spec(adapter.as_ref(), &route);
+            // A body that only names its model gets the model's fields, so the editor
+            // opens with a body to edit rather than a blank to guess at.
+            if let Some(body) = &mut spec.body {
+                models.fill(body);
+            }
+            endpoints.push(spec);
         }
     }
 
@@ -293,6 +301,52 @@ mod tests {
         assert_eq!(result.frameworks[0].id, "fastapi");
         assert_eq!(result.stats.unresolved, 0);
         assert_eq!(result.base_urls[0].url, "http://localhost:9000");
+    }
+
+    /// The body a handler takes is declared in another file; the scan reads it and hands
+    /// the request editor something to start from.
+    #[test]
+    fn a_request_body_is_filled_in_from_the_model_declared_elsewhere() {
+        let dir = project(&[
+            ("requirements.txt", "fastapi\n"),
+            (
+                "app/schemas.py",
+                concat!(
+                    "from pydantic import BaseModel\n",
+                    "class Address(BaseModel):\n",
+                    "    city: str\n",
+                    "class UserCreate(BaseModel):\n",
+                    "    name: str\n",
+                    "    email: EmailStr\n",
+                    "    age: int = 18\n",
+                    "    address: Address | None = None\n",
+                ),
+            ),
+            (
+                "app/main.py",
+                concat!(
+                    "from fastapi import FastAPI\n",
+                    "from .schemas import UserCreate\n",
+                    "app = FastAPI()\n",
+                    "@app.post(\"/users\")\n",
+                    "def create(payload: UserCreate): ...\n",
+                ),
+            ),
+        ]);
+
+        let result = scan(dir.path()).unwrap();
+        let body = result.endpoints[0].body.as_ref().expect("a body");
+        assert_eq!(
+            body.example,
+            Some(serde_json::json!({
+                "name": "string",
+                "email": "user@example.com",
+                "age": 18,
+                "address": { "city": "string" }
+            }))
+        );
+        let schema = body.schema.as_ref().unwrap();
+        assert_eq!(schema["required"], serde_json::json!(["name", "email"]));
     }
 
     #[test]

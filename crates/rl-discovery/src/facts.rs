@@ -230,6 +230,8 @@ pub struct FactSink {
     pub mounts: Vec<MountFact>,
     pub imports: Vec<ImportFact>,
     pub exports: Vec<ExportFact>,
+    /// Classes with annotated fields, for filling in request bodies. See [`crate::models`].
+    pub models: Vec<crate::models::ModelFact>,
     /// Anything the adapter noticed but could not express.
     pub warnings: Vec<String>,
 }
@@ -259,6 +261,10 @@ impl FactSink {
         self.exports.push(fact);
     }
 
+    pub fn model(&mut self, fact: crate::models::ModelFact) {
+        self.models.push(fact);
+    }
+
     pub fn warn(&mut self, message: impl Into<String>) {
         self.warnings.push(message.into());
     }
@@ -273,6 +279,7 @@ impl FactSink {
         self.mounts.extend(other.mounts);
         self.imports.extend(other.imports);
         self.exports.extend(other.exports);
+        self.models.extend(other.models);
         self.warnings.extend(other.warnings);
     }
 }

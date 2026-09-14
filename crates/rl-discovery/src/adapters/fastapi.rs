@@ -5,7 +5,7 @@
 
 use super::python::{
     auth_from_name, callee, collect_imports, docstring, enclosing_function, first_list_string,
-    list_strings, Arguments, Constants,
+    list_strings, model_of, Arguments, Constants,
 };
 use super::{Detection, FrameworkAdapter};
 use crate::facts::{FactSink, MountFact, RouteFact, RouterFact, SymbolId, SymbolRef};
@@ -115,6 +115,11 @@ impl FrameworkAdapter for FastApiAdapter {
             "assignment" => extract_declaration(file, node, &constants, sink),
             "call" => extract_call(file, node, &constants, sink),
             "decorated_definition" => extract_decorated(file, node, &constants, sink),
+            "class_definition" => {
+                if let Some(model) = model_of(file, node) {
+                    sink.model(model);
+                }
+            }
             _ => {}
         });
 
@@ -967,6 +972,59 @@ mod tests {
             Some("UserCreate")
         );
         assert!(route.query_params.is_empty());
+    }
+
+    #[test]
+    fn models_are_read_with_their_fields_defaults_and_bases() {
+        let mut index = SourceIndex::new().unwrap();
+        let mut sink = FactSink::new();
+        let parsed = index
+            .parse(
+                "schemas.py",
+                Language::Python,
+                concat!(
+                    "from pydantic import BaseModel, Field\n",
+                    "class Base(BaseModel):\n",
+                    "    id: int\n",
+                    "class UserCreate(Base):\n",
+                    "    \"\"\"A new user.\"\"\"\n",
+                    "    model_config = {}\n",
+                    "    _secret: str = \"x\"\n",
+                    "    name: str\n",
+                    "    email: str = Field(..., description=\"where to write\")\n",
+                    "    age: int = Field(default=18)\n",
+                    "    nick: str | None = None\n",
+                    "    tags: list[str] = Field(default_factory=list)\n",
+                    "    created = now()\n",
+                    "class NotAModel:\n",
+                    "    def method(self): ...\n",
+                )
+                .to_string(),
+            )
+            .unwrap();
+        FastApiAdapter.extract(&parsed, &mut sink);
+
+        let names: Vec<&str> = sink.models.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Base", "UserCreate"]);
+        let user = &sink.models[1];
+        assert_eq!(user.bases, vec!["Base"]);
+        let fields: Vec<(&str, &str, bool)> = user
+            .fields
+            .iter()
+            .map(|f| (f.name.as_str(), f.annotation.as_str(), f.required))
+            .collect();
+        assert_eq!(
+            fields,
+            vec![
+                ("name", "str", true),
+                ("email", "str", true),
+                ("age", "int", false),
+                ("nick", "str | None", false),
+                ("tags", "list[str]", false),
+            ]
+        );
+        assert_eq!(user.fields[2].default, Some(serde_json::json!(18)));
+        assert_eq!(user.fields[3].default, Some(serde_json::Value::Null));
     }
 
     #[test]

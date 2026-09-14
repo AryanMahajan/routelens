@@ -5,6 +5,7 @@
 
 use crate::facts::{ImportFact, RouteFact};
 use crate::index::{walk, ParsedFile};
+use crate::models::{ModelFact, ModelField};
 use rl_model::{AuthRequirement, BodySchema, ParamSpec, ParamStyle, PathSegment, PathTemplate};
 use std::collections::BTreeMap;
 use tree_sitter::Node;
@@ -297,6 +298,99 @@ pub fn auth_from_name(hint: &str) -> Option<AuthRequirement> {
     }
 
     None
+}
+
+/// A class with annotated fields: `class UserCreate(BaseModel): name: str`.
+///
+/// Whether it is really a Pydantic model is not decided here — a dataclass or a TypedDict
+/// describes a body just as well. Fields are the annotated assignments in the class body;
+/// `Field(...)` and `Field(default=...)` are read for their default, and a bare `...` or no
+/// default at all makes the field required.
+pub fn model_of(file: &ParsedFile, class: Node<'_>) -> Option<ModelFact> {
+    let name = file.text(class.child_by_field_name("name")?).to_string();
+    let bases: Vec<String> = class
+        .child_by_field_name("superclasses")
+        .map(|list| {
+            let mut cursor = list.walk();
+            list.named_children(&mut cursor)
+                .filter(|n| n.kind() != "keyword_argument" && n.kind() != "comment")
+                .map(|n| file.text(n).rsplit('.').next().unwrap_or("").to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let body = class.child_by_field_name("body")?;
+
+    let mut fields = Vec::new();
+    let mut cursor = body.walk();
+    for statement in body.named_children(&mut cursor) {
+        let Some(assignment) = statement
+            .named_child(0)
+            .filter(|n| n.kind() == "assignment" && statement.kind() == "expression_statement")
+        else {
+            continue;
+        };
+        let (Some(left), Some(ty)) = (
+            assignment.child_by_field_name("left"),
+            assignment.child_by_field_name("type"),
+        ) else {
+            continue;
+        };
+        if left.kind() != "identifier" {
+            continue;
+        }
+        let field_name = file.text(left).to_string();
+        // Pydantic's own knobs, and privates, are not fields.
+        if field_name.starts_with('_') || field_name == "model_config" {
+            continue;
+        }
+        let annotation = file.text(ty).to_string();
+        if annotation.starts_with("ClassVar") {
+            continue;
+        }
+        let (default, required) = match assignment.child_by_field_name("right") {
+            None => (None, true),
+            Some(value) => field_default(file, value),
+        };
+        fields.push(ModelField {
+            name: field_name,
+            annotation,
+            default,
+            required,
+        });
+    }
+    if fields.is_empty() && bases.is_empty() {
+        return None;
+    }
+    Some(ModelFact {
+        name,
+        module: file.path.clone(),
+        bases,
+        fields,
+    })
+}
+
+/// `(default, required)` from the right-hand side of a field.
+fn field_default(file: &ParsedFile, value: Node<'_>) -> (Option<serde_json::Value>, bool) {
+    if file.text(value) == "..." {
+        return (None, true);
+    }
+    if value.kind() == "call" {
+        let is_field = callee(file, value).is_some_and(|(_, f)| f == "Field");
+        if !is_field {
+            // `= some_factory()` or `= datetime.now()`: a default exists, its value does not.
+            return (None, false);
+        }
+        let args = Arguments::of(file, value);
+        let default = args.keyword("default").or_else(|| args.first_positional());
+        return match default {
+            Some(node) if file.text(node) == "..." => (None, true),
+            Some(node) => (literal(file, node), false),
+            // `Field(default_factory=list)` or `Field(description=...)` alone: optional
+            // if a factory is named, required otherwise.
+            None => (None, args.keyword("default_factory").is_none()),
+        };
+    }
+    (literal(file, value), false)
 }
 
 /// Collect every import in a file.

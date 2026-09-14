@@ -36,6 +36,7 @@ pub mod error;
 pub mod facts;
 pub mod graph;
 pub mod index;
+pub mod models;
 pub mod project;
 pub mod scan;
 
